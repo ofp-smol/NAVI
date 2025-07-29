@@ -1535,8 +1535,6 @@ class NAVIMultimodalSafety:
     def check_image_safety(self, image_data: str) -> Tuple[bool, float, str]:
         """
         Check image safety using vision encoder
-        Note: This is a simplified implementation. In production, you'd want
-        a dedicated vision safety model trained on harmful content detection.
         """
         if not self.config.enable_vision or not hasattr(self.model, 'vision_encoder'):
             return True, 1.0, "Vision safety check disabled"
