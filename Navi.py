@@ -753,17 +753,17 @@ class NAVITransformerLayer(nn.Module):
 
 # Reasoning gate mechanism for enhanced logical processing
 self.reasoning_gate = nn.Sequential(
-    nn.Linear(embed_dim, embed_dim // 4),
+    nn.Linear(self.embed_dim, self.embed_dim // 4),  # Use self.embed_dim
     nn.Sigmoid(),
-    nn.Linear(embed_dim // 4, embed_dim),
+    nn.Linear(self.embed_dim // 4, self.embed_dim),  # Use self.embed_dim
     nn.Tanh()
 )
 
 # Safety gate for content filtering
 self.safety_gate = nn.Sequential(
-    nn.Linear(embed_dim, embed_dim // 8),
+    nn.Linear(self.embed_dim, self.embed_dim // 8),  # Use self.embed_dim
     nn.ReLU(),
-    nn.Linear(embed_dim // 8, 1),
+    nn.Linear(self.embed_dim // 8, 1),              # Use self.embed_dim
     nn.Sigmoid()
 )
 
