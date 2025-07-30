@@ -117,22 +117,22 @@ class NAVIConfig:
 # CUSTOM TOKENIZER IMPLEMENTATION
 #========================================================================
 class NAVITokenizer:
-"""
-Advanced Custom Tokenizer for NAVI AI
-Sophisticated implementation with BPE, subword handling, and large vocabulary support
-"""
+    """
+    Advanced Custom Tokenizer for NAVI AI
+    Sophisticated implementation with BPE, subword handling, and large vocabulary support
+    """
 
-import re
-import json
-import pickle
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Set, Any
-from collections import defaultdict, Counter
-import unicodedata
-import logging
-from dataclasses import dataclass
+    import re
+    import json
+    import pickle
+    import numpy as np
+    from typing import Dict, List, Optional, Tuple, Set, Any
+    from collections import defaultdict, Counter
+    import unicodedata
+    import logging
+    from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
 
 @dataclass
 class TokenizerConfig:
@@ -146,7 +146,7 @@ class TokenizerConfig:
     enable_byte_fallback: bool = True
     case_sensitive: bool = False
     preserve_whitespace: bool = True
-
+    
 class AdvancedBPETokenizer:
     """
     Advanced Byte-Pair Encoding tokenizer with sophisticated features:
