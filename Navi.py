@@ -1627,11 +1627,11 @@ class NAVITransformerLayer(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
                  output_attentions: bool = False) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
-            # Store input for skip connections
-            residual = hidden_states
+        # Store input for skip connections
+        residual = hidden_states
     
-            # Pre-norm attention
-            hidden_states = self.ln1(hidden_states)
+        # Pre-norm attention
+        hidden_states = self.ln1(hidden_states)
     
         # Self-attention
         if output_attentions:
