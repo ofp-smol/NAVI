@@ -116,7 +116,7 @@ class NAVIConfig:
 #========================================================================
 # CUSTOM TOKENIZER IMPLEMENTATION
 #========================================================================
-
+class NAVITokenizer:
 """
 Advanced Custom Tokenizer for NAVI AI
 Sophisticated implementation with BPE, subword handling, and large vocabulary support
