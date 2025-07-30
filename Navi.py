@@ -4504,3 +4504,22 @@ if __name__ == "__main__":
 #=======================================================================
 # END OF N.A.V.I. MULTIMODAL SYSTEM
 #=======================================================================
+
+def clear_memory():
+    """Clear GPU memory cache"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(f"🧹 GPU memory cleared. Available: {torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated():.2e} bytes")
+
+def get_model_memory_usage(model):
+    """Get model memory usage"""
+    param_size = 0
+    buffer_size = 0
+    for param in model.parameters():
+        param_size += param.nelement() * param.element_size()
+    for buffer in model.buffers():
+        buffer_size += buffer.nelement() * buffer.element_size()
+    
+    size_mb = (param_size + buffer_size) / 1024**2
+    print(f"📊 Model memory usage: {size_mb:.2f} MB")
+    return size_mb
