@@ -3812,8 +3812,8 @@ else:
         # Initialize enhanced API server
     self.api_server = NAVIAPIServer(self.conversation_manager, self.config)
         
-    logger.info("All enhanced components initialized successfully")
-    logger.info(f"Multimodal capabilities: Vision={self.config.enable_vision}, Audio={self.config.enable_audio}")
+        logger.info("All enhanced components initialized successfully")
+        logger.info(f"Multimodal capabilities: Vision={self.config.enable_vision}, Audio={self.config.enable_audio}")
 
     def run_multimodal_demo(self):
         """Run a comprehensive multimodal demonstration"""
