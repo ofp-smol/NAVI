@@ -53,11 +53,11 @@ class NAVIConfig:
     """Complete configuration for N.A.V.I. system"""
     # Model Architecture
     vocab_size: int = 65536
-    embed_dim: int = 768
-    num_layers: int = 12
+    embed_dim: int = 512
+    num_layers: int = 8
     num_heads: int = 12
-    ff_dim: int = 3072
-    max_seq_len: int = 2048
+    ff_dim: int = 2048
+    max_seq_len: int = 1024
     dropout: float = 0.1
     
     # Safety Configuration
@@ -69,8 +69,8 @@ class NAVIConfig:
     # Training Configuration
     learning_rate: float = 1e-4
     weight_decay: float = 0.01
-    batch_size: int = 8
-    gradient_accumulation_steps: int = 4
+    batch_size: int = 4
+    gradient_accumulation_steps: int = 8
     max_grad_norm: float = 1.0
     warmup_steps: int = 1000
     
