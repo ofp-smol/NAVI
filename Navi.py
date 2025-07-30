@@ -3769,6 +3769,109 @@ class NAVIMultimodalTrainer:
             'learning_rate': self.training_stats['learning_rate']
         }
 
+def enable_colab_optimizations(self):
+    """Enable all Colab-specific optimizations"""
+    # Enable mixed precision if available
+    if torch.cuda.is_available():
+        if self.scaler is None:
+            self.scaler = torch.cuda.amp.GradScaler()
+        print("✅ Mixed precision enabled - saves ~40% memory")
+    
+    # Enable gradient checkpointing on model
+    self.model.enable_gradient_checkpointing()
+    
+    print("✅ Colab optimizations enabled")
+
+def memory_optimized_training_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+    """Memory-optimized training step for Colab"""
+    self.model.train()
+    
+    input_ids = batch['input_ids']
+    labels = batch['labels']
+    safety_labels = batch['safety_labels']
+    
+    # Use mixed precision and gradient checkpointing
+    if self.scaler and torch.cuda.is_available():
+        with torch.cuda.amp.autocast():
+            # Use gradient checkpointing if enabled
+            if hasattr(self.model, 'gradient_checkpointing') and self.model.gradient_checkpointing:
+                # Simple checkpointed forward pass
+                hidden_states = self.model.embedding(input_ids)
+                
+                # Checkpoint each transformer layer
+                for layer in self.model.layers:
+                    def create_custom_forward(module):
+                        def custom_forward(*inputs):
+                            return module(*inputs)
+                        return custom_forward
+                    
+                    hidden_states = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(layer),
+                        hidden_states,
+                        use_reentrant=False
+                    )
+                
+                hidden_states = self.model.ln_final(hidden_states)
+                logits = self.model.lm_head(hidden_states)
+                
+                # Create minimal outputs dict
+                outputs = {'logits': logits}
+            else:
+                outputs = self.model(input_ids, return_dict=True)
+            
+            # Calculate loss
+            lm_loss = self.lm_criterion(
+                outputs['logits'].view(-1, outputs['logits'].size(-1)),
+                labels.view(-1)
+            )
+            
+            # Add safety loss if available
+            if 'safety_logits' in outputs:
+                safety_loss = self.safety_criterion(
+                    outputs['safety_logits'][:, 1],
+                    1 - safety_labels
+                )
+                total_loss = lm_loss + 0.1 * safety_loss
+            else:
+                safety_loss = torch.tensor(0.0, device=input_ids.device)
+                total_loss = lm_loss
+        
+        # Backward pass with mixed precision
+        self.scaler.scale(total_loss).backward()
+        
+        if self.config.max_grad_norm > 0:
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+        
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+    else:
+        # Fallback without mixed precision
+        outputs = self.model(input_ids, return_dict=True)
+        lm_loss = self.lm_criterion(
+            outputs['logits'].view(-1, outputs['logits'].size(-1)),
+            labels.view(-1)
+        )
+        total_loss = lm_loss
+        safety_loss = torch.tensor(0.0)
+        
+        total_loss.backward()
+        
+        if self.config.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+        
+        self.optimizer.step()
+    
+    self.optimizer.zero_grad()
+    self.scheduler.step()
+    
+    return {
+        'total_loss': total_loss.item(),
+        'lm_loss': lm_loss.item(),
+        'safety_loss': safety_loss.item() if isinstance(safety_loss, torch.Tensor) else 0.0,
+        'learning_rate': self.scheduler.get_last_lr()[0]
+    }
+
     def train(self, data_file_paths, num_epochs=1):
         """Train the model with the provided data files"""
         import json
