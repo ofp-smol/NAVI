@@ -607,8 +607,6 @@ class AdvancedBPETokenizer:
                         token_ids.append(self.vocab.get(byte_char, self.special_tokens['<unk>']))
                     else:
                         token_ids.append(self.special_tokens['<unk>'])
-                    else:
-                        token_ids.append(self.special_tokens['<unk>'])
         
         # Handle length constraints
         if max_length and truncation:
