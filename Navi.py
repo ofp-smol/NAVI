@@ -15,6 +15,7 @@ import os
 import time
 import logging
 import threading
+from advanced_tokenizer import AdvancedBPETokenizer, TokenizerConfig
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass, asdict
 from collections import defaultdict, deque
@@ -117,194 +118,1050 @@ class NAVIConfig:
 # CUSTOM TOKENIZER IMPLEMENTATION
 #========================================================================
 
-class NAVITokenizer:
-    """Advanced custom tokenizer with enhanced BPE and safety features"""
+"""
+Advanced Custom Tokenizer for NAVI AI
+Sophisticated implementation with BPE, subword handling, and large vocabulary support
+"""
+
+import re
+import json
+import pickle
+import numpy as np
+from typing import Dict, List, Optional, Tuple, Set, Any
+from collections import defaultdict, Counter
+import unicodedata
+import logging
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class TokenizerConfig:
+    """Configuration for the advanced tokenizer"""
+    vocab_size: int = 100000
+    min_frequency: int = 2
+    max_token_length: int = 100
+    special_tokens_file: str = None
+    merge_priority: str = 'frequency'  # 'frequency' or 'length'
+    enable_normalization: bool = True
+    enable_byte_fallback: bool = True
+    case_sensitive: bool = False
+    preserve_whitespace: bool = True
+
+class AdvancedBPETokenizer:
+    """
+    Advanced Byte-Pair Encoding tokenizer with sophisticated features:
+    - Dynamic vocabulary building with frequency analysis
+    - Unicode normalization and byte-level fallback
+    - Subword regularization support
+    - Advanced punctuation handling
+    - Multilingual support with proper Unicode handling
+    - Contextual token merging strategies
+    - Memory-efficient vocabulary management
+    """
     
-    def __init__(self, vocab_size: int = 65536):
-        self.vocab_size = vocab_size
-        self.vocab = {}
-        self.inverse_vocab = {}
-        self.bpe_merges = {}
-        self.token_frequencies = defaultdict(int)
+    def __init__(self, config: TokenizerConfig = None):
+        self.config = config or TokenizerConfig()
         
-        # Special tokens with semantic meaning
+        # Core vocabulary components
+        self.vocab = {}  # token -> id
+        self.inverse_vocab = {}  # id -> token
+        self.token_frequencies = defaultdict(int)
+        self.merge_rules = {}  # (token1, token2) -> merged_token
+        self.merge_priorities = {}  # merge_rule -> priority_score
+        
+        # Advanced features
+        self.byte_encoder = self._build_byte_encoder()
+        self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
+        self.bpe_cache = {}  # Caching for faster repeated tokenization
+        self.subword_regularization = False
+        self.dropout_prob = 0.0
+        
+        # Special token categories with enhanced semantic meaning
         self.special_tokens = {
+            # Core tokens
             '<pad>': 0, '<unk>': 1, '<s>': 2, '</s>': 3, '<mask>': 4,
-            '<think>': 5, '</think>': 6, '<safe>': 7, '</safe>': 8,
-            '<unsafe>': 9, '</unsafe>': 10, '<multimodal>': 11, '</multimodal>': 12,
-            '<context>': 13, '</context>': 14, '<user>': 15, '</user>': 16,
-            '<assistant>': 17, '</assistant>': 18, '<system>': 19, '</system>': 20,
-            '<vision>': 21, '</vision>': 22, '<audio>': 23, '</audio>': 24
+            
+            # Reasoning and safety tokens
+            '<think>': 5, '</think>': 6, '<reason>': 7, '</reason>': 8,
+            '<safe>': 9, '</safe>': 10, '<unsafe>': 11, '</unsafe>': 12,
+            '<confidence>': 13, '</confidence>': 14,
+            
+            # Multimodal tokens
+            '<vision>': 15, '</vision>': 16, '<audio>': 17, '</audio>': 18,
+            '<multimodal>': 19, '</multimodal>': 20,
+            
+            # Conversation and context tokens
+            '<context>': 21, '</context>': 22, '<user>': 23, '</user>': 24,
+            '<assistant>': 25, '</assistant>': 26, '<system>': 27, '</system>': 28,
+            
+            # Factual and citation tokens
+            '<fact>': 29, '</fact>': 30, '<cite>': 31, '</cite>': 32,
+            '<quote>': 33, '</quote>': 34, '<reference>': 35, '</reference>': 36,
+            
+            # Emotional and personality tokens
+            '<emotion>': 37, '</emotion>': 38, '<personality>': 39, '</personality>': 40,
+            '<empathy>': 41, '</empathy>': 42,
+            
+            # Code and technical tokens
+            '<code>': 43, '</code>': 44, '<function>': 45, '</function>': 46,
+            '<variable>': 47, '</variable>': 48, '<comment>': 49, '</comment>': 50,
+            
+            # Mathematical and scientific tokens
+            '<math>': 51, '</math>': 52, '<formula>': 53, '</formula>': 54,
+            '<unit>': 55, '</unit>': 56, '<number>': 57, '</number>': 58,
+            
+            # Language and localization tokens
+            '<lang>': 59, '</lang>': 60, '<translate>': 61, '</translate>': 62,
+            
+            # Time and date tokens
+            '<time>': 63, '</time>': 64, '<date>': 65, '</date>': 66,
+            
+            # Intent and action tokens
+            '<intent>': 67, '</intent>': 68, '<action>': 69, '</action>': 70,
+            '<goal>': 71, '</goal>': 72, '<task>': 73, '</task>': 74,
+            
+            # Memory and context management
+            '<memory>': 75, '</memory>': 76, '<forget>': 77, '</forget>': 78,
+            '<remember>': 79, '</remember>': 80,
+            
+            # Quality and evaluation tokens
+            '<quality>': 81, '</quality>': 82, '<error>': 83, '</error>': 84,
+            '<warning>': 85, '</warning>': 86, '<success>': 87, '</success>': 88
+        }
+        
+        # Pattern-based token categories for intelligent tokenization
+        self.pattern_tokens = {
+            # URLs and links
+            r'https?://[^\s]+': '<url>',
+            r'www\.[^\s]+': '<url>',
+            r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}': '<email>',
+            
+            # Numbers and measurements
+            r'\d+\.\d+': '<decimal>',
+            r'\d+%': '<percentage>',
+            r'\$\d+(?:\.\d{2})?': '<currency>',
+            r'\d{1,3}(?:,\d{3})*(?:\.\d+)?': '<number>',
+            
+            # Dates and times
+            r'\d{4}-\d{2}-\d{2}': '<date>',
+            r'\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?': '<time>',
+            
+            # Technical patterns
+            r'[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}': '<uuid>',
+            r'#[a-fA-F0-9]{6}': '<color>',
+            r'rgb\(\d+,\s*\d+,\s*\d+\)': '<color>',
+            
+            # Social media and hashtags
+            r'#\w+': '<hashtag>',
+            r'@\w+': '<mention>',
+            
+            # File paths and extensions
+            r'[a-zA-Z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*': '<filepath>',
+            r'/(?:[^/\s]+/)*[^/\s]*': '<filepath>',
+            r'\.[a-zA-Z0-9]{2,4}$': '<extension>',
         }
         
         self.next_id = len(self.special_tokens)
-        self._initialize_vocab()
+        self._initialize_base_vocabulary()
+        
+        logger.info(f"Advanced BPE tokenizer initialized with {len(self.special_tokens)} special tokens")
     
-    def _initialize_vocab(self):
-        """Initialize vocabulary with special tokens, characters, and common patterns"""
+    def _build_byte_encoder(self) -> Dict[int, str]:
+        """Build byte-level encoder for handling any Unicode character"""
+        # Standard printable ASCII
+        byte_encoder = {}
+        for i in range(33, 127):  # Printable ASCII except space
+            byte_encoder[i] = chr(i)
+        
+        # Special handling for space and control characters
+        byte_encoder[32] = '▁'  # Space replacement
+        
+        # Extended range for Unicode bytes
+        n = 0
+        for b in range(256):
+            if b not in byte_encoder:
+                byte_encoder[b] = chr(256 + n)
+                n += 1
+        
+        return byte_encoder
+    
+    def _initialize_base_vocabulary(self):
+        """Initialize vocabulary with special tokens, bytes, and common patterns"""
         # Add special tokens
         for token, idx in self.special_tokens.items():
             self.vocab[token] = idx
             self.inverse_vocab[idx] = token
         
-        # Add all printable ASCII characters
-        for i in range(32, 127):
-            char = chr(i)
-            if char not in self.vocab and self.next_id < self.vocab_size:
+        # Add byte-level tokens
+        for byte_val, char in self.byte_encoder.items():
+            if char not in self.vocab and self.next_id < self.config.vocab_size:
                 self.vocab[char] = self.next_id
                 self.inverse_vocab[self.next_id] = char
                 self.next_id += 1
         
-        # Add extended Unicode characters
-        for i in range(128, 256):
-            try:
-                char = chr(i)
-                if self.next_id < self.vocab_size:
-                    self.vocab[char] = self.next_id
-                    self.inverse_vocab[self.next_id] = char
-                    self.next_id += 1
-            except:
-                continue
-        
-        # Add common sequences
-        common_sequences = [
-            'th', 'he', 'in', 'er', 'an', 're', 'ed', 'nd', 'on', 'en',
-            'the', 'and', 'ing', 'ion', 'tio', 'ent', 'ate', 'for',
-            'that', 'with', 'have', 'this', 'will', 'your', 'from',
-            'un', 'de', 're', 'in', 'im', 'pre', 'pro', 'anti',
-            'ing', 'ed', 'er', 'est', 'ly', 'tion', 'sion', 'ness'
+        # Add common subword patterns and affixes
+        common_patterns = [
+            # English morphemes and affixes
+            'un-', 're-', 'pre-', 'anti-', 'de-', 'dis-', 'mis-', 'over-', 'under-',
+            'sub-', 'super-', 'inter-', 'intra-', 'extra-', 'ultra-', 'mega-', 'micro-',
+            '-ing', '-ed', '-er', '-est', '-ly', '-tion', '-sion', '-ness', '-ment',
+            '-able', '-ible', '-ful', '-less', '-ish', '-ous', '-al', '-ic', '-ive',
+            
+            # Common words and word parts
+            'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her',
+            'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'man',
+            'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let',
+            'put', 'say', 'she', 'too', 'use',
+            
+            # Technical and scientific terms
+            'data', 'info', 'tech', 'code', 'file', 'user', 'time', 'type', 'name',
+            'text', 'list', 'item', 'link', 'page', 'site', 'web', 'net', 'app',
+            'auto', 'base', 'call', 'case', 'core', 'demo', 'dev', 'doc', 'end',
+            'env', 'eval', 'exec', 'func', 'gen', 'head', 'init', 'key', 'lib',
+            'load', 'log', 'main', 'max', 'meta', 'min', 'mod', 'node', 'null',
+            'obj', 'opt', 'out', 'param', 'path', 'prop', 'ref', 'req', 'res',
+            'run', 'set', 'src', 'std', 'str', 'sub', 'sys', 'temp', 'test',
+            'tmp', 'util', 'val', 'var', 'view', 'work',
+            
+            # Domain-specific terms
+            'model', 'train', 'learn', 'neural', 'network', 'deep', 'machine',
+            'algorithm', 'compute', 'process', 'analyze', 'predict', 'classify',
+            'optimize', 'feature', 'vector', 'matrix', 'tensor', 'gradient',
+            'loss', 'accuracy', 'precision', 'recall', 'f1', 'score', 'metric',
+            
+            # Common bigrams and trigrams
+            'er ', 'ing ', 'ion ', 'and ', 'the ', 'for ', 'are ', 'but ',
+            'not ', 'you ', 'all ', 'can ', 'had ', 'her ', 'was ', 'one ',
+            'th', 'he', 'in', 'er', 'an', 're', 'nd', 'on', 'en', 'at',
+            'ou', 'ed', 'ha', 'to', 'or', 'it', 'is', 'hi', 'es', 'ng'
         ]
         
-        for seq in common_sequences:
-            if seq not in self.vocab and self.next_id < self.vocab_size:
-                self.vocab[seq] = self.next_id
-                self.inverse_vocab[self.next_id] = seq
+        # Add patterns to vocabulary with frequency weighting
+        for pattern in common_patterns:
+            if pattern not in self.vocab and self.next_id < self.config.vocab_size:
+                self.vocab[pattern] = self.next_id
+                self.inverse_vocab[self.next_id] = pattern
+                self.token_frequencies[pattern] = 100  # Base frequency for common patterns
                 self.next_id += 1
         
-        logger.info(f"Tokenizer initialized with {len(self.vocab)} tokens")
+        logger.info(f"Base vocabulary initialized with {len(self.vocab)} tokens")
     
-    def _get_word_tokens(self, word: str) -> List[str]:
-        """Convert word to list of tokens using BPE-like approach"""
-        if word in self.vocab:
+    def _normalize_text(self, text: str) -> str:
+        """Advanced text normalization with Unicode handling"""
+        if not self.config.enable_normalization:
+            return text
+        
+        # Unicode normalization
+        text = unicodedata.normalize('NFKC', text)
+        
+        # Handle different types of whitespace
+        if self.config.preserve_whitespace:
+            # Replace various whitespace with standard space but preserve structure
+            text = re.sub(r'[\t\v\f\r]+', ' ', text)
+            text = re.sub(r' +', ' ', text)  # Multiple spaces to single space
+        else:
+            text = re.sub(r'\s+', ' ', text)
+        
+        # Case normalization
+        if not self.config.case_sensitive:
+            text = text.lower()
+        
+        return text.strip()
+    
+    def _apply_pattern_tokenization(self, text: str) -> List[str]:
+        """Apply pattern-based pre-tokenization for special patterns"""
+        tokens = []
+        last_end = 0
+        
+        # Sort patterns by length (longest first) to avoid conflicts
+        sorted_patterns = sorted(self.pattern_tokens.items(), 
+                               key=lambda x: len(x[1]), reverse=True)
+        
+        for pattern, replacement in sorted_patterns:
+            for match in re.finditer(pattern, text):
+                start, end = match.span()
+                
+                # Add text before the match
+                if start > last_end:
+                    tokens.append(text[last_end:start])
+                
+                # Add the pattern token
+                tokens.append(replacement)
+                last_end = end
+        
+        # Add remaining text
+        if last_end < len(text):
+            tokens.append(text[last_end:])
+        
+        return [token for token in tokens if token]
+    
+    def _get_word_pairs(self, word_tokens: List[str]) -> List[Tuple[str, str]]:
+        """Get all adjacent pairs in a word for BPE merging"""
+        pairs = []
+        for i in range(len(word_tokens) - 1):
+            pairs.append((word_tokens[i], word_tokens[i + 1]))
+        return pairs
+    
+    def _merge_vocab(self, pair: Tuple[str, str], word_freq: Dict[Tuple[str, ...], int]) -> Dict[Tuple[str, ...], int]:
+        """Merge the most frequent pair in vocabulary"""
+        new_word_freq = {}
+        bigram = ' '.join(pair)
+        replacement = ''.join(pair)
+        
+        for word, freq in word_freq.items():
+            new_word = []
+            i = 0
+            while i < len(word):
+                try:
+                    j = word.index(pair[0], i)
+                    new_word.extend(word[i:j])
+                    i = j
+                except ValueError:
+                    new_word.extend(word[i:])
+                    break
+                
+                if i < len(word) - 1 and word[i + 1] == pair[1]:
+                    new_word.append(replacement)
+                    i += 2
+                else:
+                    new_word.append(word[i])
+                    i += 1
+            
+            new_word_freq[tuple(new_word)] = freq
+        
+        return new_word_freq
+    
+    def train_bpe(self, corpus: List[str], num_merges: Optional[int] = None):
+        """
+        Train BPE on a corpus with advanced frequency analysis and merge strategies
+        """
+        if num_merges is None:
+            num_merges = self.config.vocab_size - len(self.vocab)
+        
+        logger.info(f"Training BPE on corpus of {len(corpus)} texts for {num_merges} merges")
+        
+        # Normalize and tokenize corpus
+        word_freq = defaultdict(int)
+        for text in corpus:
+            normalized_text = self._normalize_text(text)
+            
+            # Split by whitespace and punctuation while preserving important patterns
+            words = re.findall(r"\S+", normalized_text)
+            
+            for word in words:
+                # Convert to bytes first, then to characters
+                byte_word = word.encode('utf-8')
+                char_word = tuple(self.byte_encoder[b] for b in byte_word)
+                word_freq[char_word] += 1
+        
+        logger.info(f"Extracted {len(word_freq)} unique words from corpus")
+        
+        # Perform BPE merges
+        for merge_step in range(num_merges):
+            if merge_step % 1000 == 0:
+                logger.info(f"BPE merge step {merge_step}/{num_merges}")
+            
+            # Count pair frequencies
+            pair_freq = defaultdict(int)
+            for word, freq in word_freq.items():
+                pairs = self._get_word_pairs(list(word))
+                for pair in pairs:
+                    pair_freq[pair] += freq
+            
+            if not pair_freq:
+                logger.info(f"No more pairs to merge at step {merge_step}")
+                break
+            
+            # Select best pair based on strategy
+            if self.config.merge_priority == 'frequency':
+                best_pair = max(pair_freq, key=pair_freq.get)
+            else:  # length priority
+                best_pair = max(pair_freq, key=lambda x: (len(x[0]) + len(x[1]), pair_freq[x]))
+            
+            # Store merge rule with priority
+            merged_token = ''.join(best_pair)
+            self.merge_rules[best_pair] = merged_token
+            self.merge_priorities[best_pair] = pair_freq[best_pair]
+            
+            # Add to vocabulary if not present
+            if merged_token not in self.vocab and self.next_id < self.config.vocab_size:
+                self.vocab[merged_token] = self.next_id
+                self.inverse_vocab[self.next_id] = merged_token
+                self.token_frequencies[merged_token] = pair_freq[best_pair]
+                self.next_id += 1
+            
+            # Apply merge to word frequencies
+            word_freq = self._merge_vocab(best_pair, word_freq)
+        
+        logger.info(f"BPE training completed. Final vocabulary size: {len(self.vocab)}")
+        logger.info(f"Total merge rules: {len(self.merge_rules)}")
+    
+    def _apply_bpe(self, word: str) -> List[str]:
+        """Apply BPE encoding to a single word with caching"""
+        if word in self.bpe_cache:
+            return self.bpe_cache[word]
+        
+        if len(word) <= 1:
             return [word]
         
-        tokens = list(word)
+        # Convert to byte representation
+        try:
+            byte_word = word.encode('utf-8')
+            tokens = [self.byte_encoder.get(b, '<unk>') for b in byte_word]
+        except UnicodeEncodeError:
+            return ['<unk>']
+        
+        # Apply BPE merges
         while len(tokens) > 1:
-            pairs = [(tokens[i], tokens[i+1]) for i in range(len(tokens)-1)]
+            pairs = self._get_word_pairs(tokens)
             if not pairs:
                 break
             
+            # Find the best pair to merge (highest priority)
             best_pair = None
+            best_priority = -1
+            
             for pair in pairs:
-                merged = pair[0] + pair[1]
-                if merged in self.vocab:
-                    best_pair = pair
-                    break
+                if pair in self.merge_rules:
+                    priority = self.merge_priorities.get(pair, 0)
+                    if priority > best_priority:
+                        best_priority = priority
+                        best_pair = pair
             
             if best_pair is None:
                 break
             
+            # Merge the best pair
+            merged_token = self.merge_rules[best_pair]
             new_tokens = []
             i = 0
             while i < len(tokens):
-                if i < len(tokens) - 1 and (tokens[i], tokens[i+1]) == best_pair:
-                    new_tokens.append(tokens[i] + tokens[i+1])
+                if (i < len(tokens) - 1 and 
+                    tokens[i] == best_pair[0] and 
+                    tokens[i + 1] == best_pair[1]):
+                    new_tokens.append(merged_token)
                     i += 2
                 else:
                     new_tokens.append(tokens[i])
                     i += 1
             tokens = new_tokens
         
+        # Cache result
+        self.bpe_cache[word] = tokens
         return tokens
     
-    def encode(self, text: str, max_length: int = None, add_special_tokens: bool = True) -> List[int]:
-        """Encode text to token IDs with advanced preprocessing"""
+    def encode(self, text: str, max_length: Optional[int] = None, 
+               add_special_tokens: bool = True, truncation: bool = True,
+               padding: bool = False, pad_to_multiple_of: Optional[int] = None) -> List[int]:
+        """
+        Advanced encoding with comprehensive options
+        """
         if not text:
             if add_special_tokens:
                 return [self.special_tokens['<s>'], self.special_tokens['</s>']]
             return []
         
-        text = text.strip()
-        tokens = []
-        if add_special_tokens:
-            tokens.append(self.special_tokens['<s>'])
+        # Normalize text
+        text = self._normalize_text(text)
         
-        words = re.findall(r'\S+|\s+', text)
-        for word in words:
-            if word.isspace():
-                for char in word:
-                    token_id = self.vocab.get(char, self.special_tokens['<unk>'])
-                    tokens.append(token_id)
+        # Apply pattern-based tokenization first
+        pattern_tokens = self._apply_pattern_tokenization(text)
+        
+        # Process each segment
+        all_tokens = []
+        if add_special_tokens:
+            all_tokens.append('<s>')
+        
+        for segment in pattern_tokens:
+            if segment in self.special_tokens:
+                all_tokens.append(segment)
+            elif segment.startswith('<') and segment.endswith('>'):
+                # Already a special token
+                all_tokens.append(segment)
             else:
-                word_tokens = self._get_word_tokens(word)
-                for token in word_tokens:
-                    token_id = self.vocab.get(token, self.special_tokens['<unk>'])
-                    tokens.append(token_id)
-            
-            if max_length and len(tokens) >= max_length - (1 if add_special_tokens else 0):
-                break
+                # Split by whitespace and apply BPE
+                words = segment.split()
+                for word in words:
+                    if word.strip():
+                        bpe_tokens = self._apply_bpe(word)
+                        all_tokens.extend(bpe_tokens)
+                        
+                        # Add space token if preserving whitespace
+                        if self.config.preserve_whitespace and word != words[-1]:
+                            all_tokens.append('▁')
         
         if add_special_tokens:
-            tokens.append(self.special_tokens['</s>'])
+            all_tokens.append('</s>')
         
-        if max_length:
-            tokens = tokens[:max_length]
+        # Convert tokens to IDs
+        token_ids = []
+        for token in all_tokens:
+            if token in self.vocab:
+                token_ids.append(self.vocab[token])
+            else:
+                # Handle unknown tokens with byte fallback
+                if self.config.enable_byte_fallback and len(token) == 1:
+                    byte_val = ord(token)
+                    if byte_val < 256:
+                        byte_char = self.byte_encoder.get(byte_val, '<unk>')
+                        token_ids.append(self.vocab.get(byte_char, self.special_tokens['<unk>']))
+                    else:
+                        token_ids.append(self.special_tokens['<unk>'])
+                else:
+                    token_ids.append(self.special_tokens['<unk>'])
         
-        return tokens
+        # Handle length constraints
+        if max_length and truncation:
+            if len(token_ids) > max_length:
+                if add_special_tokens:
+                    # Keep start token, truncate middle, keep end token
+                    token_ids = token_ids[:max_length-1] + [token_ids[-1]]
+                else:
+                    token_ids = token_ids[:max_length]
+        
+        # Handle padding
+        if padding and max_length:
+            while len(token_ids) < max_length:
+                token_ids.append(self.special_tokens['<pad>'])
+        
+        if pad_to_multiple_of:
+            remainder = len(token_ids) % pad_to_multiple_of
+            if remainder != 0:
+                padding_length = pad_to_multiple_of - remainder
+                token_ids.extend([self.special_tokens['<pad>']] * padding_length)
+        
+        return token_ids
     
-    def decode(self, token_ids: List[int], skip_special_tokens: bool = True) -> str:
-        """Decode token IDs back to text"""
+    def decode(self, token_ids: List[int], skip_special_tokens: bool = True,
+               clean_up_tokenization_spaces: bool = True) -> str:
+        """
+        Advanced decoding with proper handling of special cases
+        """
+        if not token_ids:
+            return ""
+        
+        # Convert IDs to tokens
         tokens = []
         for token_id in token_ids:
             if token_id in self.inverse_vocab:
                 token = self.inverse_vocab[token_id]
+                
                 if skip_special_tokens and token in self.special_tokens:
                     continue
+                
                 tokens.append(token)
             else:
                 if not skip_special_tokens:
                     tokens.append('<unk>')
         
+        # Join tokens
         text = ''.join(tokens)
-        text = text.replace('</s>', '').replace('<s>', '').strip()
-        return text
+        
+        # Convert bytes back to text
+        try:
+            # Handle byte-encoded characters
+            byte_list = []
+            i = 0
+            while i < len(text):
+                char = text[i]
+                if char in self.byte_decoder:
+                    byte_list.append(self.byte_decoder[char])
+                elif ord(char) >= 256:
+                    # This is a byte-encoded character
+                    byte_list.append(ord(char) - 256)
+                else:
+                    # Regular character, encode it
+                    for byte_val in char.encode('utf-8'):
+                        byte_list.append(byte_val)
+                i += 1
+            
+            # Convert bytes back to string
+            if byte_list:
+                decoded_text = bytes(byte_list).decode('utf-8', errors='ignore')
+            else:
+                decoded_text = text
+        except:
+            decoded_text = text
+        
+        # Clean up tokenization artifacts
+        if clean_up_tokenization_spaces:
+            decoded_text = decoded_text.replace('▁', ' ')  # Restore spaces
+            decoded_text = re.sub(r' +', ' ', decoded_text)  # Multiple spaces to single
+            decoded_text = decoded_text.strip()
+        
+        return decoded_text
     
-    def encode_conversation(self, messages: List[Dict[str, str]], max_length: int = None) -> List[int]:
-        """Encode a conversation with proper role tokens"""
-        tokens = [self.special_tokens['<s>']]
+    def encode_batch(self, texts: List[str], max_length: Optional[int] = None,
+                    padding: bool = True, truncation: bool = True) -> Dict[str, List[List[int]]]:
+        """Encode a batch of texts efficiently"""
+        batch_encodings = []
+        attention_masks = []
         
-        for message in messages:
-            role = message.get('role', 'user')
-            content = message.get('content', '')
-            
-            if role == 'user':
-                tokens.append(self.special_tokens['<user>'])
-            elif role == 'assistant':
-                tokens.append(self.special_tokens['<assistant>'])
-            elif role == 'system':
-                tokens.append(self.special_tokens['<system>'])
-            
-            content_tokens = self.encode(content, add_special_tokens=False)
-            tokens.extend(content_tokens)
-            
-            if role == 'user':
-                tokens.append(self.special_tokens['</user>'])
-            elif role == 'assistant':
-                tokens.append(self.special_tokens['</assistant>'])
-            elif role == 'system':
-                tokens.append(self.special_tokens['</system>'])
-            
-            if max_length and len(tokens) >= max_length - 1:
-                break
+        for text in texts:
+            encoding = self.encode(text, max_length=max_length, 
+                                 truncation=truncation, padding=False)
+            batch_encodings.append(encoding)
         
-        tokens.append(self.special_tokens['</s>'])
-        if max_length:
-            tokens = tokens[:max_length]
+        # Determine max length for batch
+        if padding and max_length is None:
+            max_length = max(len(encoding) for encoding in batch_encodings)
         
-        return tokens
+        # Apply padding and create attention masks
+        padded_encodings = []
+        for encoding in batch_encodings:
+            attention_mask = [1] * len(encoding)
+            
+            if padding and len(encoding) < max_length:
+                padding_length = max_length - len(encoding)
+                encoding.extend([self.special_tokens['<pad>']] * padding_length)
+                attention_mask.extend([0] * padding_length)
+            
+            padded_encodings.append(encoding)
+            attention_masks.append(attention_mask)
+        
+        return {
+            'input_ids': padded_encodings,
+            'attention_mask': attention_masks
+        }
     
     def get_vocab_size(self) -> int:
+        """Return vocabulary size"""
         return len(self.vocab)
+    
+    def get_vocab(self) -> Dict[str, int]:
+        """Return vocabulary dictionary"""
+        return self.vocab.copy()
+    
+    def save(self, filepath: str):
+        """Save tokenizer to file"""
+        tokenizer_data = {
+            'config': self.config.__dict__,
+            'vocab': self.vocab,
+            'merge_rules': self.merge_rules,
+            'merge_priorities': self.merge_priorities,
+            'token_frequencies': dict(self.token_frequencies),
+            'special_tokens': self.special_tokens,
+            'pattern_tokens': self.pattern_tokens,
+            'byte_encoder': self.byte_encoder,
+            'next_id': self.next_id
+        }
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(tokenizer_data, f)
+        
+        logger.info(f"Tokenizer saved to {filepath}")
+    
+    @classmethod
+    def load(cls, filepath: str) -> 'AdvancedBPETokenizer':
+        """Load tokenizer from file"""
+        with open(filepath, 'rb') as f:
+            tokenizer_data = pickle.load(f)
+        
+        config = TokenizerConfig(**tokenizer_data['config'])
+        tokenizer = cls(config)
+        
+        tokenizer.vocab = tokenizer_data['vocab']
+        tokenizer.inverse_vocab = {v: k for k, v in tokenizer.vocab.items()}
+        tokenizer.merge_rules = tokenizer_data['merge_rules']
+        tokenizer.merge_priorities = tokenizer_data['merge_priorities']
+        tokenizer.token_frequencies = defaultdict(int, tokenizer_data['token_frequencies'])
+        tokenizer.special_tokens = tokenizer_data['special_tokens']
+        tokenizer.pattern_tokens = tokenizer_data['pattern_tokens']
+        tokenizer.byte_encoder = tokenizer_data['byte_encoder']
+        tokenizer.byte_decoder = {v: k for k, v in tokenizer.byte_encoder.items()}
+        tokenizer.next_id = tokenizer_data['next_id']
+        
+        logger.info(f"Tokenizer loaded from {filepath}")
+        return tokenizer
+    
+    def analyze_text(self, text: str) -> Dict[str, Any]:
+        """Analyze text and return detailed tokenization information"""
+        tokens = self.encode(text, add_special_tokens=False)
+        token_strings = [self.inverse_vocab.get(tid, '<unk>') for tid in tokens]
+        
+        analysis = {
+            'original_text': text,
+            'normalized_text': self._normalize_text(text),
+            'token_count': len(tokens),
+            'unique_tokens': len(set(tokens)),
+            'tokens': tokens,
+            'token_strings': token_strings,
+            'compression_ratio': len(text) / len(tokens) if tokens else 0,
+            'special_token_count': sum(1 for t in token_strings if t in self.special_tokens),
+            'oov_count': sum(1 for t in token_strings if t == '<unk>'),
+            'byte_fallback_count': sum(1 for t in token_strings if t in self.byte_encoder.values())
+        }
+        
+        return analysis
+    
+    def get_token_frequency(self, token: str) -> int:
+        """Get frequency of a specific token"""
+        return self.token_frequencies.get(token, 0)
+   
+   def get_most_frequent_tokens(self, top_k: int = 100) -> List[Tuple[str, int]]:
+       """Get the most frequent tokens"""
+       return sorted(self.token_frequencies.items(), key=lambda x: x[1], reverse=True)[:top_k]
+   
+   def add_tokens(self, new_tokens: List[str]) -> int:
+       """Add new tokens to vocabulary"""
+       added_count = 0
+       for token in new_tokens:
+           if token not in self.vocab and self.next_id < self.config.vocab_size:
+               self.vocab[token] = self.next_id
+               self.inverse_vocab[self.next_id] = token
+               self.next_id += 1
+               added_count += 1
+       
+       logger.info(f"Added {added_count} new tokens to vocabulary")
+       return added_count
+   
+   def enable_subword_regularization(self, dropout_prob: float = 0.1):
+       """Enable subword regularization for robust training"""
+       self.subword_regularization = True
+       self.dropout_prob = dropout_prob
+       logger.info(f"Subword regularization enabled with dropout probability {dropout_prob}")
+   
+   def disable_subword_regularization(self):
+       """Disable subword regularization"""
+       self.subword_regularization = False
+       self.dropout_prob = 0.0
+       logger.info("Subword regularization disabled")
+   
+   def _apply_subword_regularization(self, tokens: List[str]) -> List[str]:
+       """Apply subword regularization during training"""
+       if not self.subword_regularization or self.dropout_prob == 0.0:
+           return tokens
+       
+       regularized_tokens = []
+       for token in tokens:
+           if (token not in self.special_tokens and 
+               np.random.random() < self.dropout_prob and 
+               len(token) > 1):
+               # Split token into smaller parts randomly
+               if len(token) >= 2:
+                   split_point = np.random.randint(1, len(token))
+                   regularized_tokens.extend([token[:split_point], token[split_point:]])
+               else:
+                   regularized_tokens.append(token)
+           else:
+               regularized_tokens.append(token)
+       
+       return regularized_tokens
+   
+   def create_conversation_encoding(self, messages: List[Dict[str, str]], 
+                                  max_length: Optional[int] = None) -> List[int]:
+       """Create properly formatted conversation encoding"""
+       conversation_parts = []
+       
+       for message in messages:
+           role = message.get('role', 'user')
+           content = message.get('content', '')
+           
+           # Add role-specific tokens
+           if role == 'system':
+               conversation_parts.extend(['<system>', content, '</system>'])
+           elif role == 'user':
+               conversation_parts.extend(['<user>', content, '</user>'])
+           elif role == 'assistant':
+               conversation_parts.extend(['<assistant>', content, '</assistant>'])
+           else:
+               conversation_parts.append(content)
+       
+       # Join and encode
+       conversation_text = ' '.join(conversation_parts)
+       return self.encode(conversation_text, max_length=max_length)
+   
+   def extract_entities(self, text: str) -> Dict[str, List[str]]:
+       """Extract entities using pattern matching"""
+       entities = defaultdict(list)
+       
+       for pattern, entity_type in self.pattern_tokens.items():
+           matches = re.findall(pattern, text)
+           if matches:
+               entities[entity_type.strip('<>')].extend(matches)
+       
+       return dict(entities)
+   
+   def optimize_vocabulary(self, corpus: List[str], target_size: Optional[int] = None):
+       """Optimize vocabulary based on corpus statistics"""
+       if target_size is None:
+           target_size = self.config.vocab_size
+       
+       logger.info(f"Optimizing vocabulary to target size {target_size}")
+       
+       # Count token usage in corpus
+       token_usage = defaultdict(int)
+       for text in corpus:
+           tokens = self.encode(text, add_special_tokens=False)
+           for token_id in tokens:
+               token = self.inverse_vocab.get(token_id, '<unk>')
+               token_usage[token] += 1
+       
+       # Keep special tokens and most frequent tokens
+       special_tokens_set = set(self.special_tokens.keys())
+       sorted_tokens = sorted(token_usage.items(), key=lambda x: x[1], reverse=True)
+       
+       new_vocab = {}
+       new_inverse_vocab = {}
+       next_id = 0
+       
+       # Add special tokens first
+       for token in special_tokens_set:
+           if token in self.vocab:
+               new_vocab[token] = next_id
+               new_inverse_vocab[next_id] = token
+               next_id += 1
+       
+       # Add most frequent tokens up to target size
+       for token, freq in sorted_tokens:
+           if token not in special_tokens_set and next_id < target_size:
+               new_vocab[token] = next_id
+               new_inverse_vocab[next_id] = token
+               self.token_frequencies[token] = freq
+               next_id += 1
+       
+       # Update vocabulary
+       old_size = len(self.vocab)
+       self.vocab = new_vocab
+       self.inverse_vocab = new_inverse_vocab
+       self.next_id = next_id
+       
+       logger.info(f"Vocabulary optimized: {old_size} -> {len(self.vocab)} tokens")
+   
+   def compute_token_statistics(self) -> Dict[str, Any]:
+       """Compute comprehensive vocabulary statistics"""
+       total_tokens = len(self.vocab)
+       special_count = len(self.special_tokens)
+       regular_count = total_tokens - special_count
+       
+       # Analyze token lengths
+       token_lengths = [len(token) for token in self.vocab.keys() 
+                       if token not in self.special_tokens]
+       
+       # Analyze merge rules
+       merge_count = len(self.merge_rules)
+       
+       # Frequency statistics
+       freq_values = list(self.token_frequencies.values())
+       
+       stats = {
+           'total_vocabulary_size': total_tokens,
+           'special_tokens_count': special_count,
+           'regular_tokens_count': regular_count,
+           'merge_rules_count': merge_count,
+           'average_token_length': np.mean(token_lengths) if token_lengths else 0,
+           'max_token_length': max(token_lengths) if token_lengths else 0,
+           'min_token_length': min(token_lengths) if token_lengths else 0,
+           'token_frequency_stats': {
+               'mean': np.mean(freq_values) if freq_values else 0,
+               'median': np.median(freq_values) if freq_values else 0,
+               'std': np.std(freq_values) if freq_values else 0,
+               'max': max(freq_values) if freq_values else 0,
+               'min': min(freq_values) if freq_values else 0
+           },
+           'coverage_by_frequency': self._compute_frequency_coverage()
+       }
+       
+       return stats
+   
+   def _compute_frequency_coverage(self) -> Dict[str, float]:
+       """Compute what percentage of tokens cover X% of frequency mass"""
+       if not self.token_frequencies:
+           return {}
+       
+       sorted_freqs = sorted(self.token_frequencies.values(), reverse=True)
+       total_freq = sum(sorted_freqs)
+       
+       coverage = {}
+       cumulative_freq = 0
+       for i, freq in enumerate(sorted_freqs):
+           cumulative_freq += freq
+           coverage_pct = (cumulative_freq / total_freq) * 100
+           if coverage_pct >= 50 and '50%' not in coverage:
+               coverage['50%'] = (i + 1) / len(sorted_freqs) * 100
+           if coverage_pct >= 80 and '80%' not in coverage:
+               coverage['80%'] = (i + 1) / len(sorted_freqs) * 100
+           if coverage_pct >= 90 and '90%' not in coverage:
+               coverage['90%'] = (i + 1) / len(sorted_freqs) * 100
+               break
+       
+       return coverage
+
+def create_sample_training_corpus() -> List[str]:
+   """Create a diverse sample corpus for tokenizer training"""
+   corpus = [
+       # Technical and AI content
+       "Machine learning models require large datasets for training and validation purposes.",
+       "Neural networks use backpropagation algorithms to optimize their parameters.",
+       "Natural language processing involves tokenization, parsing, and semantic analysis.",
+       "Deep learning architectures include convolutional neural networks and transformers.",
+       "The attention mechanism revolutionized sequence-to-sequence modeling.",
+       
+       # Conversational content
+       "Hello, how can I help you today?",
+       "I'm looking for information about artificial intelligence.",
+       "Could you please explain how tokenization works?",
+       "Thank you for your assistance with this problem.",
+       "I appreciate your detailed explanation.",
+       
+       # Multimodal content
+       "This image shows a beautiful sunset over the mountains.",
+       "The audio contains speech with background music.",
+       "Please analyze this multimodal content combining text, image, and audio.",
+       "Vision models can identify objects, scenes, and activities in images.",
+       "Speech recognition systems convert audio to text using neural networks.",
+       
+       # Code and technical content
+       "def tokenize(text): return text.split()",
+       "import torch.nn as nn",
+       "class Transformer(nn.Module):",
+       "self.attention = MultiHeadAttention()",
+       "optimizer = torch.optim.AdamW(params)",
+       
+       # Scientific and mathematical content
+       "The equation E=mc² represents mass-energy equivalence.",
+       "Statistical significance is measured using p-values and confidence intervals.",
+       "The gradient descent algorithm minimizes the loss function iteratively.",
+       "Probability distributions describe uncertainty in random variables.",
+       "Linear algebra operations are fundamental to machine learning.",
+       
+       # Web and URL content
+       "Visit https://example.com for more information.",
+       "Send an email to user@example.org for support.",
+       "The file path is /home/user/documents/file.txt",
+       "Color code #FF6B35 represents a vibrant orange.",
+       "The UUID is 550e8400-e29b-41d4-a716-446655440000",
+       
+       # Diverse punctuation and formatting
+       "What's the difference between AI and ML?",
+       "Here are three key points: 1) Speed, 2) Accuracy, 3) Efficiency.",
+       "The model achieved 95.7% accuracy on the test set.",
+       "Training took approximately 2.5 hours on GPU hardware.",
+       "Results: precision=0.89, recall=0.92, f1-score=0.90",
+       
+       # Multilingual examples
+       "Hello world in different languages: Hola mundo, Bonjour monde, こんにちは世界",
+       "Common greetings: Hello, Hi, Hey, Good morning, Good afternoon",
+       "Numbers: one, two, three, vier, cinq, six, siete, eight, neuf, ten",
+       
+       # Long-form content
+       "The field of artificial intelligence has evolved rapidly over the past decade, with breakthrough developments in deep learning, natural language processing, and computer vision. These advances have enabled the creation of sophisticated AI systems capable of understanding and generating human-like text, recognizing complex patterns in images, and processing audio signals with remarkable accuracy.",
+       
+       # Safety and content moderation examples  
+       "Please ensure all content follows safety guidelines and community standards.",
+       "This AI system includes comprehensive safety filtering and content moderation.",
+       "Harmful, illegal, or inappropriate content will be automatically detected and blocked.",
+       "The safety classifier evaluates content across multiple dimensions and modalities.",
+       
+       # Specialized domain content
+       "Medical diagnosis requires careful analysis of symptoms and test results.",
+       "Financial markets exhibit complex patterns influenced by economic indicators.",
+       "Climate change research uses sophisticated modeling and data analysis techniques.",
+       "Educational technology enhances learning through personalized adaptive systems.",
+       "Robotics applications span manufacturing, healthcare, and autonomous vehicles."
+   ]
+   
+   return corpus
+
+def demonstrate_advanced_tokenizer():
+   """Demonstrate the advanced tokenizer capabilities"""
+   print("🚀 Advanced BPE Tokenizer Demonstration")
+   print("=" * 60)
+   
+   # Create tokenizer with custom configuration
+   config = TokenizerConfig(
+       vocab_size=50000,
+       min_frequency=2,
+       enable_normalization=True,
+       enable_byte_fallback=True,
+       preserve_whitespace=True
+   )
+   
+   tokenizer = AdvancedBPETokenizer(config)
+   
+   # Train on sample corpus
+   print("📚 Training tokenizer on sample corpus...")
+   corpus = create_sample_training_corpus()
+   tokenizer.train_bpe(corpus, num_merges=1000)
+   
+   # Demonstrate various features
+   test_texts = [
+       "Hello, world! This is a test of the advanced tokenizer.",
+       "The AI model achieved 95.7% accuracy on the test dataset.",
+       "Visit https://example.com or email user@example.org for more info.",
+       "Code example: def train_model(data, epochs=10): return model.fit(data)",
+       "🤖 AI can process emojis, URLs, and special characters like #hashtags @mentions",
+       "Multimodal content: <vision>Image data</vision> <audio>Audio data</audio>",
+       "Safety check: <safe>This content is appropriate</safe>",
+       "Mathematical notation: E=mc², α+β=γ, f(x) = x² + 2x + 1"
+   ]
+   
+   print("\n🧪 Testing tokenization on various text types:")
+   print("-" * 60)
+   
+   for i, text in enumerate(test_texts, 1):
+       print(f"\n📝 Test {i}: {text[:50]}{'...' if len(text) > 50 else ''}")
+       
+       # Encode
+       tokens = tokenizer.encode(text)
+       token_strings = [tokenizer.inverse_vocab.get(t, '<unk>') for t in tokens]
+       
+       # Decode
+       decoded = tokenizer.decode(tokens)
+       
+       # Analysis
+       analysis = tokenizer.analyze_text(text)
+       
+       print(f"   🔢 Tokens ({len(tokens)}): {tokens[:10]}{'...' if len(tokens) > 10 else ''}")
+       print(f"   📄 Token strings: {token_strings[:5]}{'...' if len(token_strings) > 5 else ''}")
+       print(f"   📊 Compression ratio: {analysis['compression_ratio']:.2f}")
+       print(f"   ✅ Decoding match: {'✓' if decoded == text else '✗'}")
+       
+       if analysis['oov_count'] > 0:
+           print(f"   ⚠️  OOV tokens: {analysis['oov_count']}")
+   
+   # Show vocabulary statistics
+   print("\n📊 Tokenizer Statistics:")
+   print("-" * 60)
+   stats = tokenizer.compute_token_statistics()
+   print(f"Total vocabulary size: {stats['total_vocabulary_size']:,}")
+   print(f"Special tokens: {stats['special_tokens_count']}")
+   print(f"Regular tokens: {stats['regular_tokens_count']:,}")
+   print(f"Merge rules: {stats['merge_rules_count']:,}")
+   print(f"Average token length: {stats['average_token_length']:.2f} characters")
+   
+   # Show most frequent tokens
+   print(f"\n🔥 Top 20 Most Frequent Tokens:")
+   for token, freq in tokenizer.get_most_frequent_tokens(20):
+       print(f"   '{token}': {freq}")
+   
+   # Demonstrate batch encoding
+   print(f"\n📦 Batch Encoding Demonstration:")
+   batch_texts = test_texts[:3]
+   batch_result = tokenizer.encode_batch(batch_texts, max_length=50, padding=True)
+   print(f"   Batch size: {len(batch_result['input_ids'])}")
+   print(f"   Sequence length: {len(batch_result['input_ids'][0])}")
+   print(f"   With attention masks: {len(batch_result['attention_mask'])}")
+   
+   # Save tokenizer
+   save_path = "advanced_navi_tokenizer.pkl"
+   tokenizer.save(save_path)
+   print(f"\n💾 Tokenizer saved to: {save_path}")
+   
+   # Load and verify
+   loaded_tokenizer = AdvancedBPETokenizer.load(save_path)
+   test_encoding = loaded_tokenizer.encode("Test loading functionality")
+   print(f"✅ Tokenizer loaded successfully, test encoding: {len(test_encoding)} tokens")
+   
+   return tokenizer
+
+if __name__ == "__main__":
+   # Run demonstration
+   tokenizer = demonstrate_advanced_tokenizer()
+   
+   print("\n🎉 Advanced tokenizer demonstration completed!")
+   print("The tokenizer is ready for integration with NAVI AI.")
 
 #========================================================================
 # VISION ENCODER FOR MULTIMODAL CAPABILITIES
