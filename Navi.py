@@ -799,7 +799,7 @@ class AdvancedBPETokenizer:
         """Get frequency of a specific token"""
         return self.token_frequencies.get(token, 0)
    
-   def get_most_frequent_tokens(self, top_k: int = 100) -> List[Tuple[str, int]]:
+    def get_most_frequent_tokens(self, top_k: int = 100) -> List[Tuple[str, int]]:
        """Get the most frequent tokens"""
        return sorted(self.token_frequencies.items(), key=lambda x: x[1], reverse=True)[:top_k]
    
