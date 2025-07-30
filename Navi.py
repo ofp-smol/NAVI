@@ -1765,6 +1765,12 @@ class NAVIModel(nn.Module):
         
         logger.info(f"Enhanced N.A.V.I. model initialized with {self.count_parameters():,} parameters")
         
+    def enable_gradient_checkpointing(self):
+        """Enable gradient checkpointing to save memory"""
+        for layer in self.layers:
+            layer.self_attn.gradient_checkpointing = True
+        print("✅ Gradient checkpointing enabled")
+
     def _init_weights(self, module):
         """Initialize model weights using best practices"""
         if isinstance(module, nn.Linear):
