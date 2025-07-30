@@ -3772,44 +3772,44 @@ class NAVIMultimodalApplication:
         
         # Initialize tokenizer with multimodal tokens
         tokenizer_config = TokenizerConfig(
-    vocab_size=self.config.vocab_size,
-    enable_normalization=True,
-    enable_byte_fallback=True,
-    preserve_whitespace=True
-)
-self.tokenizer = NAVITokenizer(tokenizer_config)
+            vocab_size=self.config.vocab_size,
+            enable_normalization=True,
+            enable_byte_fallback=True,
+            preserve_whitespace=True
+        )
+        self.tokenizer = NAVITokenizer(tokenizer_config)
 
-# Train the tokenizer if needed
-if not os.path.exists('navi_tokenizer.pkl'):
-    print("🔧 Training advanced tokenizer...")
-    sample_corpus = create_sample_training_corpus()  # You'll need to add this function
-    self.tokenizer.train_bpe(sample_corpus, num_merges=2000)
-    self.tokenizer.save('navi_tokenizer.pkl')
-else:
-    self.tokenizer = NAVITokenizer.load('navi_tokenizer.pkl')
+        # Train the tokenizer if needed
+        if not os.path.exists('navi_tokenizer.pkl'):
+            print("🔧 Training advanced tokenizer...")
+            sample_corpus = create_sample_training_corpus()  # You'll need to add this function
+            self.tokenizer.train_bpe(sample_corpus, num_merges=2000)
+            self.tokenizer.save('navi_tokenizer.pkl')
+        else:
+            self.tokenizer = NAVITokenizer.load('navi_tokenizer.pkl')
 
-    # Initialize enhanced model
-    self.model = NAVIModel(self.config)
+            # Initialize enhanced model
+            self.model = NAVIModel(self.config)
 
-    # Initialize enhanced RAG system
-    self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
+            # Initialize enhanced RAG system
+            self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
 
-    # Initialize enhanced safety system
-    self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
+            # Initialize enhanced safety system
+            self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
 
-    # Initialize enhanced conversation manager
-    self.conversation_manager = NAVIConversationManager(
-        self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
-    )
+            # Initialize enhanced conversation manager
+            self.conversation_manager = NAVIConversationManager(
+                self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
+            )
 
-    # Initialize enhanced trainer
-    self.trainer = NAVIMultimodalTrainer(self.model, self.tokenizer, self.config)
+            # Initialize enhanced trainer
+            self.trainer = NAVIMultimodalTrainer(self.model, self.tokenizer, self.config)
 
-    # Initialize enhanced API server
-    self.api_server = NAVIAPIServer(self.conversation_manager, self.config)
+            # Initialize enhanced API server
+            self.api_server = NAVIAPIServer(self.conversation_manager, self.config)
 
-    logger.info("All enhanced components initialized successfully")
-    logger.info(f"Multimodal capabilities: Vision={self.config.enable_vision}, Audio={self.config.enable_audio}")
+            logger.info("All enhanced components initialized successfully")
+            logger.info(f"Multimodal capabilities: Vision={self.config.enable_vision}, Audio={self.config.enable_audio}")
 
     def run_multimodal_demo(self):
         """Run a comprehensive multimodal demonstration"""
