@@ -3775,7 +3775,22 @@ class NAVIMultimodalApplication:
         logger.info("Initializing Enhanced N.A.V.I. components with multimodal support...")
         
         # Initialize tokenizer with multimodal tokens
-        self.tokenizer = NAVITokenizer(self.config.vocab_size)
+        tokenizer_config = TokenizerConfig(
+    vocab_size=self.config.vocab_size,
+    enable_normalization=True,
+    enable_byte_fallback=True,
+    preserve_whitespace=True
+)
+self.tokenizer = AdvancedBPETokenizer(tokenizer_config)
+
+# Train the tokenizer if needed
+if not os.path.exists('navi_tokenizer.pkl'):
+    print("🔧 Training advanced tokenizer...")
+    sample_corpus = create_sample_training_corpus()  # You'll need to add this function
+    self.tokenizer.train_bpe(sample_corpus, num_merges=2000)
+    self.tokenizer.save('navi_tokenizer.pkl')
+else:
+    self.tokenizer = AdvancedBPETokenizer.load('navi_tokenizer.pkl')
         
         # Initialize enhanced model
         self.model = NAVIModel(self.config)
