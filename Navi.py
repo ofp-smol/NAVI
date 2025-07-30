@@ -1606,17 +1606,17 @@ class NAVITransformerLayer(nn.Module):
 
         # Reasoning gate mechanism for enhanced logical processing
         self.reasoning_gate = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 4),  # Use self.embed_dim
+            nn.Linear(embed_dim, embed_dim // 4),
             nn.Sigmoid(),
-            nn.Linear(self.embed_dim // 4, self.embed_dim),  # Use self.embed_dim
+            nn.Linear(embed_dim // 4, embed_dim),
             nn.Tanh()
         )
 
         # Safety gate for content filtering
         self.safety_gate = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 8),  # Use self.embed_dim
+            nn.Linear(embed_dim, embed_dim // 8),
             nn.ReLU(),
-            nn.Linear(self.embed_dim // 8, 1),              # Use self.embed_dim
+            nn.Linear(embed_dim // 8, 1),
             nn.Sigmoid()
         )
 
@@ -1625,43 +1625,43 @@ class NAVITransformerLayer(nn.Module):
         self.ff_skip_weight = nn.Parameter(torch.ones(1))
 
     def forward(self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
-                 output_attentions: bool = False) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
+                output_attentions: bool = False) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         # Store input for skip connections
         residual = hidden_states
-    
+        
         # Pre-norm attention
         hidden_states = self.ln1(hidden_states)
-    
+        
         # Self-attention
         if output_attentions:
             attn_output, attn_weights = self.self_attn(
-            hidden_states, attention_mask=attention_mask, output_attentions=True
-        )
+                hidden_states, attention_mask=attention_mask, output_attentions=True
+            )
         else:
             attn_output = self.self_attn(hidden_states, attention_mask=attention_mask)
-    
-            # Skip connection with learnable weight
-            hidden_states = residual + self.attn_skip_weight * attn_output
-    
-            # Store for next skip connection
-            residual = hidden_states
-    
-            # Pre-norm feed-forward
-            hidden_states = self.ln2(hidden_states)
-    
-            # Feed-forward network
-            ff_output = self.feed_forward(hidden_states)
-    
-            # Apply reasoning gate
-            reasoning_weight = self.reasoning_gate(hidden_states)
-            ff_output = ff_output * reasoning_weight
-    
-            # Skip connection with learnable weight
-            hidden_states = residual + self.ff_skip_weight * ff_output
-    
-            # Compute safety scores for monitoring
-            safety_scores = self.safety_gate(hidden_states)
-    
+        
+        # Skip connection with learnable weight
+        hidden_states = residual + self.attn_skip_weight * attn_output
+        
+        # Store for next skip connection
+        residual = hidden_states
+        
+        # Pre-norm feed-forward
+        hidden_states = self.ln2(hidden_states)
+        
+        # Feed-forward network
+        ff_output = self.feed_forward(hidden_states)
+        
+        # Apply reasoning gate
+        reasoning_weight = self.reasoning_gate(hidden_states)
+        ff_output = ff_output * reasoning_weight
+        
+        # Skip connection with learnable weight
+        hidden_states = residual + self.ff_skip_weight * ff_output
+        
+        # Compute safety scores for monitoring
+        safety_scores = self.safety_gate(hidden_states)
+        
         if output_attentions:
             return hidden_states, attn_weights, safety_scores
         return hidden_states
