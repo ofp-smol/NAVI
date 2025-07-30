@@ -3793,24 +3793,24 @@ else:
     self.tokenizer = AdvancedBPETokenizer.load('navi_tokenizer.pkl')
         
         # Initialize enhanced model
-        self.model = NAVIModel(self.config)
+    self.model = NAVIModel(self.config)
         
         # Initialize enhanced RAG system
-        self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
+    self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
         
         # Initialize enhanced safety system
-        self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
+    self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
         
         # Initialize enhanced conversation manager
-        self.conversation_manager = NAVIConversationManager(
+    self.conversation_manager = NAVIConversationManager(
             self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
         )
         
         # Initialize enhanced trainer
-        self.trainer = NAVIMultimodalTrainer(self.model, self.tokenizer, self.config)
+    self.trainer = NAVIMultimodalTrainer(self.model, self.tokenizer, self.config)
         
         # Initialize enhanced API server
-        self.api_server = NAVIAPIServer(self.conversation_manager, self.config)
+    self.api_server = NAVIAPIServer(self.conversation_manager, self.config)
         
         logger.info("All enhanced components initialized successfully")
         logger.info(f"Multimodal capabilities: Vision={self.config.enable_vision}, Audio={self.config.enable_audio}")
