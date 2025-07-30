@@ -3777,7 +3777,7 @@ class NAVIMultimodalApplication:
     enable_byte_fallback=True,
     preserve_whitespace=True
 )
-self.tokenizer = AdvancedBPETokenizer(tokenizer_config)
+self.tokenizer = NAVITokenizer(tokenizer_config)
 
 # Train the tokenizer if needed
 if not os.path.exists('navi_tokenizer.pkl'):
@@ -3786,7 +3786,7 @@ if not os.path.exists('navi_tokenizer.pkl'):
     self.tokenizer.train_bpe(sample_corpus, num_merges=2000)
     self.tokenizer.save('navi_tokenizer.pkl')
 else:
-    self.tokenizer = AdvancedBPETokenizer.load('navi_tokenizer.pkl')
+    self.tokenizer = NAVITokenizer.load('navi_tokenizer.pkl')
 
     # Initialize enhanced model
     self.model = NAVIModel(self.config)
