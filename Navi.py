@@ -803,7 +803,7 @@ class AdvancedBPETokenizer:
        """Get the most frequent tokens"""
        return sorted(self.token_frequencies.items(), key=lambda x: x[1], reverse=True)[:top_k]
    
-   def add_tokens(self, new_tokens: List[str]) -> int:
+    def add_tokens(self, new_tokens: List[str]) -> int:
        """Add new tokens to vocabulary"""
        added_count = 0
        for token in new_tokens:
