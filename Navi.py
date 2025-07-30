@@ -3626,7 +3626,7 @@ class NAVIMultimodalTrainer:
             'audio_embeddings': torch.stack(batch_audio) if batch_audio else None
         }
 
-    def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+    def multimodal_training_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
         """Enhanced training step with multimodal support"""
         self.model.train()
         
