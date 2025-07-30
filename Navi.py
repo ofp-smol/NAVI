@@ -1835,6 +1835,34 @@ class NAVIModel(nn.Module):
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
             return None
+    def forward_efficient(self, input_ids, attention_mask=None, **kwargs):
+        """Memory-efficient forward pass for training"""
+        # Process in smaller chunks if sequence is too long
+        batch_size, seq_len = input_ids.shape
+    
+        if seq_len > 512:  # Process long sequences in chunks
+            chunk_size = 256
+            outputs_list = []
+        
+        for i in range(0, seq_len, chunk_size):
+            chunk_input = input_ids[:, i:i+chunk_size]
+            chunk_mask = attention_mask[:, i:i+chunk_size] if attention_mask is not None else None
+            
+            with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+                chunk_output = self.forward(chunk_input, chunk_mask, **kwargs)
+            
+            outputs_list.append(chunk_output)
+            
+            # Clear intermediate results
+            del chunk_output
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        
+            # Combine outputs
+            combined_logits = torch.cat([out['logits'] for out in outputs_list], dim=1)
+            return {'logits': combined_logits, 'safety_scores': outputs_list[-1]['safety_scores']}
+        else:
+            return self.forward(input_ids, attention_mask, **kwargs)
             
     def forward(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
                 position_ids: Optional[torch.Tensor] = None, vision_data: str = None,
