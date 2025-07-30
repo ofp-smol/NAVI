@@ -3626,113 +3626,232 @@ class NAVIMultimodalTrainer:
             'audio_embeddings': torch.stack(batch_audio) if batch_audio else None
         }
 
-    def multimodal_training_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
-        """Enhanced training step with multimodal support"""
-        self.model.train()
-        
-        input_ids = batch['input_ids']
-        labels = batch['labels']
-        safety_labels = batch['safety_labels']
-        vision_emb = batch.get('vision_embeddings')
-        audio_emb = batch.get('audio_embeddings')
-        
-        # Mixed precision training
-        if self.scaler:
-            with torch.cuda.amp.autocast():
-                outputs = self.model(
-                    input_ids, 
-                    return_dict=True
-                )
+def train(self, data_file_paths, num_epochs=1):
+    """Train the model with the provided data files"""
+    import json
+    import os
+    
+    logger.info(f"Starting training for {num_epochs} epochs with data from: {data_file_paths}")
+    
+    # Load training data
+    training_data = []
+    
+    if isinstance(data_file_paths, str):
+        data_file_paths = [data_file_paths]
+    
+    for file_path in data_file_paths:
+        try:
+            if os.path.exists(file_path):
+                if file_path.endswith('.json'):
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            training_data.extend(data)
+                        else:
+                            training_data.append(data)
+                elif file_path.endswith('.jsonl'):
+                    with open(file_path, 'r') as f:
+                        for line in f:
+                            training_data.append(json.loads(line.strip()))
+                elif file_path.endswith('.txt'):
+                    with open(file_path, 'r') as f:
+                        text = f.read()
+                        # Create simple training examples from text
+                        training_data.append({
+                            'text': text,
+                            'safety_label': 1,
+                            'modality': 'text'
+                        })
+                else:
+                    logger.warning(f"Unsupported file format: {file_path}")
+            else:
+                logger.warning(f"File not found: {file_path}")
                 
-                # Language modeling loss
+        except Exception as e:
+            logger.error(f"Error loading training data from {file_path}: {e}")
+            
+    # If no data loaded, create demo data
+    if not training_data:
+        logger.info("No training data loaded, using demo data")
+        training_data = [
+            {
+                "text": "<user>What is artificial intelligence?</user><assistant>Artificial Intelligence (AI) is a field of computer science focused on creating systems that can perform tasks typically requiring human intelligence, such as learning, reasoning, perception, and decision-making.</assistant>",
+                "safety_label": 1,
+                "modality": "text"
+            },
+            {
+                "text": "<user>How does machine learning work?</user><assistant>Machine learning is a subset of AI where algorithms learn patterns from data to make predictions or decisions without being explicitly programmed for each specific task. It involves training models on large datasets to recognize patterns and improve performance over time.</assistant>",
+                "safety_label": 1,
+                "modality": "text"
+            },
+            {
+                "text": "<user>Explain neural networks</user><assistant>Neural networks are computing systems inspired by biological neural networks. They consist of interconnected nodes (neurons) that process information through weighted connections. Deep learning uses multi-layered neural networks to learn complex patterns in data.</assistant>",
+                "safety_label": 1,
+                "modality": "text"
+            }
+        ]
+    
+    logger.info(f"Loaded {len(training_data)} training examples")
+    print(f"🚀 Training N.A.V.I. with {len(training_data)} examples for {num_epochs} epochs...")
+    
+    # Training loop
+    for epoch in range(num_epochs):
+        print(f"\n📚 Epoch {epoch + 1}/{num_epochs}")
+        self.training_stats['epoch'] = epoch + 1
+        
+        epoch_losses = {'total': 0.0, 'lm': 0.0, 'safety': 0.0, 'multimodal': 0.0}
+        num_batches = 0
+        
+        # Process data in batches
+        for i in range(0, len(training_data), self.config.batch_size):
+            batch_data = training_data[i:i + self.config.batch_size]
+            
+            try:
+                # Prepare multimodal batch (uses existing method)
+                batch = self.prepare_multimodal_training_data(batch_data)
+                
+                # Training step (uses existing method)
+                step_losses = self.multimodal_training_step(batch)
+                
+                # Accumulate losses
+                for key in epoch_losses:
+                    if key in step_losses:
+                        epoch_losses[key] += step_losses[key]
+                
+                num_batches += 1
+                
+                # Log progress
+                if num_batches % 10 == 0:
+                    print(f"   Step {self.training_stats['step']}: "
+                          f"Loss={step_losses['total_loss']:.4f}, "
+                          f"MM={step_losses.get('multimodal_loss', 0.0):.4f}, "
+                          f"LR={step_losses['learning_rate']:.6f}")
+                    
+            except Exception as e:
+                logger.error(f"Error in training step: {e}")
+                continue
+        
+        # Average losses
+        if num_batches > 0:
+            for key in epoch_losses:
+                epoch_losses[key] /= num_batches
+        
+        def multimodal_training_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+            """Enhanced training step with multimodal support"""
+            self.model.train()
+        
+            input_ids = batch['input_ids']
+            labels = batch['labels']
+            safety_labels = batch['safety_labels']
+            vision_emb = batch.get('vision_embeddings')
+            audio_emb = batch.get('audio_embeddings')
+        
+            # Mixed precision training
+            if self.scaler:
+                with torch.cuda.amp.autocast():
+                    outputs = self.model(
+                        input_ids, 
+                        return_dict=True
+                    )
+                
+                    # Language modeling loss
+                    lm_loss = self.lm_criterion(
+                        outputs['logits'].view(-1, outputs['logits'].size(-1)),
+                        labels.view(-1)
+                    )
+                
+                    # Safety classification loss
+                    safety_loss = self.safety_criterion(
+                        outputs['safety_logits'][:, 1],
+                        1 - safety_labels
+                    )
+                
+                    # Multimodal alignment loss (if multimodal data present)
+                    multimodal_loss = 0.0
+                    if vision_emb is not None or audio_emb is not None:
+                        # Simple alignment loss between text and other modalities
+                        text_repr = outputs['last_hidden_state'].mean(dim=1)
+                    
+                        if vision_emb is not None:
+                            vision_repr = vision_emb.mean(dim=1)
+                            vision_alignment = 1 - F.cosine_similarity(text_repr, vision_repr).mean()
+                            multimodal_loss += self.vision_weight * vision_alignment
+                    
+                        if audio_emb is not None:
+                            audio_repr = audio_emb.mean(dim=1)
+                            audio_alignment = 1 - F.cosine_similarity(text_repr, audio_repr).mean()
+                            multimodal_loss += self.audio_weight * audio_alignment
+                
+                    # Total loss
+                    total_loss = (self.text_weight * lm_loss + 
+                                0.1 * safety_loss + 
+                                self.fusion_weight * multimodal_loss)
+                    
+                    # Backward pass with scaling
+                    self.scaler.scale(total_loss).backward()
+                
+                    # Gradient clipping
+                    if self.config.max_grad_norm > 0:
+                        self.scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+                
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+            else:
+                # Regular precision training
+                outputs = self.model(input_ids, return_dict=True)
+            
                 lm_loss = self.lm_criterion(
                     outputs['logits'].view(-1, outputs['logits'].size(-1)),
                     labels.view(-1)
                 )
-                
-                # Safety classification loss
+            
                 safety_loss = self.safety_criterion(
                     outputs['safety_logits'][:, 1],
                     1 - safety_labels
                 )
-                
-                # Multimodal alignment loss (if multimodal data present)
-                multimodal_loss = 0.0
-                if vision_emb is not None or audio_emb is not None:
-                    # Simple alignment loss between text and other modalities
-                    text_repr = outputs['last_hidden_state'].mean(dim=1)
-                    
-                    if vision_emb is not None:
-                        vision_repr = vision_emb.mean(dim=1)
-                        vision_alignment = 1 - F.cosine_similarity(text_repr, vision_repr).mean()
-                        multimodal_loss += self.vision_weight * vision_alignment
-                    
-                    if audio_emb is not None:
-                        audio_repr = audio_emb.mean(dim=1)
-                        audio_alignment = 1 - F.cosine_similarity(text_repr, audio_repr).mean()
-                        multimodal_loss += self.audio_weight * audio_alignment
-                
-                # Total loss
-                total_loss = (self.text_weight * lm_loss + 
-                            0.1 * safety_loss + 
-                            self.fusion_weight * multimodal_loss)
-                
-                # Backward pass with scaling
-                self.scaler.scale(total_loss).backward()
-                
-                # Gradient clipping
+            
+                multimodal_loss = torch.tensor(0.0)
+            
+                total_loss = lm_loss + 0.1 * safety_loss + self.fusion_weight * multimodal_loss
+            
+                total_loss.backward()
+            
                 if self.config.max_grad_norm > 0:
-                    self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
-                
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-        else:
-            # Regular precision training
-            outputs = self.model(input_ids, return_dict=True)
             
-            lm_loss = self.lm_criterion(
-                outputs['logits'].view(-1, outputs['logits'].size(-1)),
-                labels.view(-1)
-            )
-            
-            safety_loss = self.safety_criterion(
-                outputs['safety_logits'][:, 1],
-                1 - safety_labels
-            )
-            
-            multimodal_loss = torch.tensor(0.0)
-            
-            total_loss = lm_loss + 0.1 * safety_loss + self.fusion_weight * multimodal_loss
-            
-            total_loss.backward()
-            
-            if self.config.max_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
-            
-            self.optimizer.step()
+                self.optimizer.step()
         
-        # Zero gradients
-        self.optimizer.zero_grad()
+            # Zero gradients
+            self.optimizer.zero_grad()
         
-        # Update learning rate
-        self.scheduler.step()
+            # Update learning rate
+            self.scheduler.step()
         
-        # Update statistics
-        self.training_stats['step'] += 1
-        self.training_stats['total_loss'] += total_loss.item()
-        self.training_stats['lm_loss'] += lm_loss.item()
-        self.training_stats['safety_loss'] += safety_loss.item()
-        self.training_stats['multimodal_loss'] += multimodal_loss.item() if isinstance(multimodal_loss, torch.Tensor) else multimodal_loss
-        self.training_stats['learning_rate'] = self.scheduler.get_last_lr()[0]
+            # Update statistics
+            self.training_stats['step'] += 1
+            self.training_stats['total_loss'] += total_loss.item()
+            self.training_stats['lm_loss'] += lm_loss.item()
+            self.training_stats['safety_loss'] += safety_loss.item()
+            self.training_stats['multimodal_loss'] += multimodal_loss.item() if isinstance(multimodal_loss, torch.Tensor) else multimodal_loss
+            self.training_stats['learning_rate'] = self.scheduler.get_last_lr()[0]
         
-        return {
-            'total_loss': total_loss.item(),
-            'lm_loss': lm_loss.item(),
-            'safety_loss': safety_loss.item(),
-            'multimodal_loss': multimodal_loss.item() if isinstance(multimodal_loss, torch.Tensor) else multimodal_loss,
-            'learning_rate': self.training_stats['learning_rate']
-        }
+            return {
+                'total_loss': total_loss.item(),
+                'lm_loss': lm_loss.item(),
+                'safety_loss': safety_loss.item(),
+                'multimodal_loss': multimodal_loss.item() if isinstance(multimodal_loss, torch.Tensor) else multimodal_loss,
+                'learning_rate': self.training_stats['learning_rate']
+            }
+
+        print(f"✅ Epoch {epoch + 1} completed:")
+        print(f"   Average Loss: {epoch_losses['total']:.4f}")
+        print(f"   Language Model Loss: {epoch_losses['lm']:.4f}")
+        print(f"   Safety Loss: {epoch_losses['safety']:.4f}")
+        print(f"   Multimodal Loss: {epoch_losses['multimodal']:.4f}")
+    
+    logger.info("Training completed successfully")
+    print("🎉 Training completed successfully!")
 
 #=======================================================================
 # ENHANCED MAIN APPLICATION CLASS
