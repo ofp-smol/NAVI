@@ -607,8 +607,8 @@ class AdvancedBPETokenizer:
                         token_ids.append(self.vocab.get(byte_char, self.special_tokens['<unk>']))
                     else:
                         token_ids.append(self.special_tokens['<unk>'])
-                else:
-                    token_ids.append(self.special_tokens['<unk>'])
+                    else:
+                        token_ids.append(self.special_tokens['<unk>'])
         
         # Handle length constraints
         if max_length and truncation:
@@ -1607,25 +1607,25 @@ class NAVITransformerLayer(nn.Module):
         self.ln1 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
         self.ln2 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
 
-# Reasoning gate mechanism for enhanced logical processing
-self.reasoning_gate = nn.Sequential(
-    nn.Linear(self.embed_dim, self.embed_dim // 4),  # Use self.embed_dim
-    nn.Sigmoid(),
-    nn.Linear(self.embed_dim // 4, self.embed_dim),  # Use self.embed_dim
-    nn.Tanh()
-)
+        # Reasoning gate mechanism for enhanced logical processing
+        self.reasoning_gate = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim // 4),  # Use self.embed_dim
+            nn.Sigmoid(),
+            nn.Linear(self.embed_dim // 4, self.embed_dim),  # Use self.embed_dim
+            nn.Tanh()
+        )
 
-# Safety gate for content filtering
-self.safety_gate = nn.Sequential(
-    nn.Linear(self.embed_dim, self.embed_dim // 8),  # Use self.embed_dim
-    nn.ReLU(),
-    nn.Linear(self.embed_dim // 8, 1),              # Use self.embed_dim
-    nn.Sigmoid()
-)
+        # Safety gate for content filtering
+        self.safety_gate = nn.Sequential(
+            nn.Linear(self.embed_dim, self.embed_dim // 8),  # Use self.embed_dim
+            nn.ReLU(),
+            nn.Linear(self.embed_dim // 8, 1),              # Use self.embed_dim
+            nn.Sigmoid()
+        )
 
-# Skip connection weights
-self.attn_skip_weight = nn.Parameter(torch.ones(1))
-self.ff_skip_weight = nn.Parameter(torch.ones(1))
+        # Skip connection weights
+        self.attn_skip_weight = nn.Parameter(torch.ones(1))
+        self.ff_skip_weight = nn.Parameter(torch.ones(1))
 
 def forward(self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
             output_attentions: bool = False) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
