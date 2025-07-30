@@ -113,6 +113,19 @@ class NAVIConfig:
             config_dict = json.load(f)
         return cls(**config_dict)
 
+@dataclass
+class TokenizerConfig:
+    """Configuration for the advanced tokenizer"""
+    vocab_size: int = 100000
+    min_frequency: int = 2
+    max_token_length: int = 100
+    special_tokens_file: str = None
+    merge_priority: str = 'frequency'  # 'frequency' or 'length'
+    enable_normalization: bool = True
+    enable_byte_fallback: bool = True
+    case_sensitive: bool = False
+    preserve_whitespace: bool = True
+
 #========================================================================
 # CUSTOM TOKENIZER IMPLEMENTATION
 #========================================================================
@@ -134,20 +147,6 @@ class NAVITokenizer:
 
     logger = logging.getLogger(__name__)
 
-@dataclass
-class TokenizerConfig:
-    """Configuration for the advanced tokenizer"""
-    vocab_size: int = 100000
-    min_frequency: int = 2
-    max_token_length: int = 100
-    special_tokens_file: str = None
-    merge_priority: str = 'frequency'  # 'frequency' or 'length'
-    enable_normalization: bool = True
-    enable_byte_fallback: bool = True
-    case_sensitive: bool = False
-    preserve_whitespace: bool = True
-    
-class AdvancedBPETokenizer:
     """
     Advanced Byte-Pair Encoding tokenizer with sophisticated features:
     - Dynamic vocabulary building with frequency analysis
