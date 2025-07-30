@@ -816,19 +816,19 @@ class AdvancedBPETokenizer:
        logger.info(f"Added {added_count} new tokens to vocabulary")
        return added_count
    
-   def enable_subword_regularization(self, dropout_prob: float = 0.1):
+    def enable_subword_regularization(self, dropout_prob: float = 0.1):
        """Enable subword regularization for robust training"""
        self.subword_regularization = True
        self.dropout_prob = dropout_prob
        logger.info(f"Subword regularization enabled with dropout probability {dropout_prob}")
    
-   def disable_subword_regularization(self):
+    def disable_subword_regularization(self):
        """Disable subword regularization"""
        self.subword_regularization = False
        self.dropout_prob = 0.0
        logger.info("Subword regularization disabled")
    
-   def _apply_subword_regularization(self, tokens: List[str]) -> List[str]:
+    def _apply_subword_regularization(self, tokens: List[str]) -> List[str]:
        """Apply subword regularization during training"""
        if not self.subword_regularization or self.dropout_prob == 0.0:
            return tokens
@@ -849,7 +849,7 @@ class AdvancedBPETokenizer:
        
        return regularized_tokens
    
-   def create_conversation_encoding(self, messages: List[Dict[str, str]], 
+    def create_conversation_encoding(self, messages: List[Dict[str, str]], 
                                   max_length: Optional[int] = None) -> List[int]:
        """Create properly formatted conversation encoding"""
        conversation_parts = []
@@ -872,7 +872,7 @@ class AdvancedBPETokenizer:
        conversation_text = ' '.join(conversation_parts)
        return self.encode(conversation_text, max_length=max_length)
    
-   def extract_entities(self, text: str) -> Dict[str, List[str]]:
+    def extract_entities(self, text: str) -> Dict[str, List[str]]:
        """Extract entities using pattern matching"""
        entities = defaultdict(list)
        
@@ -883,7 +883,7 @@ class AdvancedBPETokenizer:
        
        return dict(entities)
    
-   def optimize_vocabulary(self, corpus: List[str], target_size: Optional[int] = None):
+    def optimize_vocabulary(self, corpus: List[str], target_size: Optional[int] = None):
        """Optimize vocabulary based on corpus statistics"""
        if target_size is None:
            target_size = self.config.vocab_size
@@ -929,7 +929,7 @@ class AdvancedBPETokenizer:
        
        logger.info(f"Vocabulary optimized: {old_size} -> {len(self.vocab)} tokens")
    
-   def compute_token_statistics(self) -> Dict[str, Any]:
+    def compute_token_statistics(self) -> Dict[str, Any]:
        """Compute comprehensive vocabulary statistics"""
        total_tokens = len(self.vocab)
        special_count = len(self.special_tokens)
@@ -965,7 +965,7 @@ class AdvancedBPETokenizer:
        
        return stats
    
-   def _compute_frequency_coverage(self) -> Dict[str, float]:
+    def _compute_frequency_coverage(self) -> Dict[str, float]:
        """Compute what percentage of tokens cover X% of frequency mass"""
        if not self.token_frequencies:
            return {}
