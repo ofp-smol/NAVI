@@ -1566,7 +1566,7 @@ class NAVIMultiHeadAttention(nn.Module):
         return attn_output
 
 #========================================================================
-# ADVANCED TRANSFORMER LAYER WITH REASONING
+# MINIMAL FIX: NAVITransformerLayer with proper indentation (preserving all original features)
 #========================================================================
 
 class NAVITransformerLayer(nn.Module):
@@ -1604,7 +1604,7 @@ class NAVITransformerLayer(nn.Module):
         self.ln1 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
         self.ln2 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
 
-        # Reasoning gate mechanism for enhanced logical processing
+        # FIXED INDENTATION: Reasoning gate mechanism for enhanced logical processing
         self.reasoning_gate = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 4),
             nn.Sigmoid(),
@@ -1612,7 +1612,7 @@ class NAVITransformerLayer(nn.Module):
             nn.Tanh()
         )
 
-        # Safety gate for content filtering
+        # FIXED INDENTATION: Safety gate for content filtering
         self.safety_gate = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 8),
             nn.ReLU(),
@@ -1620,7 +1620,7 @@ class NAVITransformerLayer(nn.Module):
             nn.Sigmoid()
         )
 
-        # Skip connection weights
+        # FIXED INDENTATION: Skip connection weights
         self.attn_skip_weight = nn.Parameter(torch.ones(1))
         self.ff_skip_weight = nn.Parameter(torch.ones(1))
 
