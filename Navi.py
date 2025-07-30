@@ -15,7 +15,6 @@ import os
 import time
 import logging
 import threading
-from advanced_tokenizer import AdvancedBPETokenizer, TokenizerConfig
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass, asdict
 from collections import defaultdict, deque
