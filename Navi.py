@@ -1682,6 +1682,13 @@ class NAVIModel(nn.Module):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.use_checkpointing = True  # Enable gradient checkpointing for memory efficiency
 
+        # Add memory optimization flag
+        if torch.cuda.is_available():
+            # Clear CUDA cache
+            torch.cuda.empty_cache()
+            # Set memory fraction to prevent OOM
+            torch.cuda.set_per_process_memory_fraction(0.8)
+
         # Embedding layer
         self.embedding = NAVIEmbedding(
             vocab_size=config.vocab_size,
@@ -1703,7 +1710,12 @@ class NAVIModel(nn.Module):
         
         # Final layer normalization
         self.ln_final = nn.LayerNorm(config.embed_dim, eps=1e-6)
-        
+
+        # Enable gradient checkpointing for memory efficiency
+        if self.use_checkpointing:
+            for layer in self.layers:
+                layer = torch.utils.checkpoint.checkpoint_wrapper(layer)
+
         # Language modeling head
         self.lm_head = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
         
