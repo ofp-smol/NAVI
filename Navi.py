@@ -770,7 +770,7 @@ class NAVIModel(nn.Module):
         # Value prediction
         values = self.value_head(safety_input).squeeze(-1)
        
-       if not return_dict:
+        if not return_dict:
            return lm_logits
            
        # Return comprehensive output dictionary
