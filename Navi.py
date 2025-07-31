@@ -1679,7 +1679,9 @@ class NAVIModel(nn.Module):
     def __init__(self, config: NAVIConfig):
         super().__init__()
         self.config = config
-        
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.use_checkpointing = True  # Enable gradient checkpointing for memory efficiency
+
         # Embedding layer
         self.embedding = NAVIEmbedding(
             vocab_size=config.vocab_size,
