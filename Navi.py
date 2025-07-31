@@ -1587,18 +1587,18 @@ class NAVIConversationManager:
 #===============================================================================
 
 class NAVIApplication:
-   """N.A.V.I. application orchestrator"""
-   
+    """N.A.V.I. application orchestrator"""
+
     def __init__(self, config_path: str = None):
-       # Load or create configuration
-       if config_path and os.path.exists(config_path):
-           self.config = NAVIConfig.load(config_path)
-           logger.info(f"Configuration loaded from {config_path}")
-       else:
-           self.config = NAVIConfig()
-           if config_path:
-               self.config.save(config_path)
-               logger.info(f"Default configuration saved to {config_path}")
+        # Load or create configuration
+        if config_path and os.path.exists(config_path):
+            self.config = NAVIConfig.load(config_path)
+            logger.info(f"Configuration loaded from {config_path}")
+        else:
+            self.config = NAVIConfig()
+            if config_path:
+                self.config.save(config_path)
+                logger.info(f"Default configuration saved to {config_path}")
        
        # Initialize components
        self.tokenizer = None
