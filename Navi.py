@@ -1613,224 +1613,224 @@ class NAVIConversationManager:
 class NAVIApplication:
    """N.A.V.I. application orchestrator"""
    
-   def __init__(self, config_path: str = None):
-       # Load or create configuration
-       if config_path and os.path.exists(config_path):
-           self.config = NAVIConfig.load(config_path)
-           logger.info(f"Configuration loaded from {config_path}")
-       else:
-           self.config = NAVIConfig()
-           if config_path:
-               self.config.save(config_path)
-               logger.info(f"Default configuration saved to {config_path}")
+      def __init__(self, config_path: str = None):
+          # Load or create configuration
+          if config_path and os.path.exists(config_path):
+              self.config = NAVIConfig.load(config_path)
+              logger.info(f"Configuration loaded from {config_path}")
+          else:
+              self.config = NAVIConfig()
+              if config_path:
+                  self.config.save(config_path)
+                  logger.info(f"Default configuration saved to {config_path}")
        
-       # Initialize components
-       self.tokenizer = None
-       self.model = None
-       self.rag_system = None
-       self.safety_system = None
-       self.conversation_manager = None
+          # Initialize components
+          self.tokenizer = None
+          self.model = None
+          self.rag_system = None
+          self.safety_system = None
+          self.conversation_manager = None
        
-       logger.info("N.A.V.I. application initialized")
+          logger.info("N.A.V.I. application initialized")
 
-   def initialize_components(self):
-       """Initialize all system components"""
-       logger.info("Initializing N.A.V.I. components...")
+      def initialize_components(self):
+          """Initialize all system components"""
+          logger.info("Initializing N.A.V.I. components...")
        
-       try:
-           # Clear memory
-           gc.collect()
+          try:
+              # Clear memory
+              gc.collect()
            
-           # Initialize tokenizer
-           self.tokenizer = NAVITokenizer(self.config.vocab_size)
+              # Initialize tokenizer
+              self.tokenizer = NAVITokenizer(self.config.vocab_size)
            
-           # Initialize model
-           self.model = NAVIModel(self.config)
+              # Initialize model
+              self.model = NAVIModel(self.config)
            
-           # Initialize RAG system
-           self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
+              # Initialize RAG system
+              self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
            
-           # Initialize safety system
-           self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
+              # Initialize safety system
+              self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
            
-           # Initialize conversation manager
-           self.conversation_manager = NAVIConversationManager(
-               self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
-           )
+              # Initialize conversation manager
+              self.conversation_manager = NAVIConversationManager(
+                   self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
+              )
            
-           logger.info("All components initialized successfully")
-           logger.info(f"Model parameters: {self.model.count_parameters():,}")
+              logger.info("All components initialized successfully")
+              logger.info(f"Model parameters: {self.model.count_parameters():,}")
            
-       except Exception as e:
-           logger.error(f"Error initializing components: {e}")
-           raise
+          except Exception as e:
+              logger.error(f"Error initializing components: {e}")
+              raise
 
-   def run_demo(self):
-       """Run interactive demo"""
-       print("=" * 70)
-       print("N.A.V.I. DEMONSTRATION")
-       print("Advanced AI with Safety and Reasoning")
-       print("=" * 70)
+      def run_demo(self):
+          """Run interactive demo"""
+          print("=" * 70)
+          print("N.A.V.I. DEMONSTRATION")
+          print("Advanced AI with Safety and Reasoning")
+          print("=" * 70)
        
-       if not self.conversation_manager:
-           raise RuntimeError("Conversation manager not initialized. Call initialize_components() first.")
+          if not self.conversation_manager:
+               raise RuntimeError("Conversation manager not initialized. Call initialize_components() first.")
        
-       # Start demo conversation
-       conv_id = f"demo_{int(time.time())}"
-       self.conversation_manager.start_conversation(conv_id)
+          # Start demo conversation
+          conv_id = f"demo_{int(time.time())}"
+          self.conversation_manager.start_conversation(conv_id)
        
-       print("\n🤖 N.A.V.I.: Hello! I'm N.A.V.I. with advanced safety and reasoning capabilities.")
-       print("\nDemo Commands:")
-       print("- Type your message normally for conversation")
-       print("- Type 'stats' to see safety statistics")
-       print("- Type 'quit' to exit")
+          print("\n🤖 N.A.V.I.: Hello! I'm N.A.V.I. with advanced safety and reasoning capabilities.")
+          print("\nDemo Commands:")
+          print("- Type your message normally for conversation")
+          print("- Type 'stats' to see safety statistics")
+          print("- Type 'quit' to exit")
        
-       while True:
-           try:
-               user_input = input("\n👤 You: ").strip()
+          while True:
+               try:
+                   user_input = input("\n👤 You: ").strip()
                
-               if user_input.lower() in ['quit', 'exit', 'bye']:
-                   print("🤖 N.A.V.I.: Goodbye! Thank you for trying the demo.")
+                   if user_input.lower() in ['quit', 'exit', 'bye']:
+                       print("🤖 N.A.V.I.: Goodbye! Thank you for trying the demo.")
+                       break
+               
+                   if user_input.lower() == 'stats':
+                       stats = self.safety_system.get_moderation_stats()
+                       print(f"🔒 Safety Statistics:")
+                       print(f"   Total requests: {stats['total_requests']}")
+                       print(f"   Safe requests: {stats['safe_requests']}")
+                       print(f"   Block rate: {stats.get('block_rate', 0):.2%}")
+                       continue
+               
+                   if not user_input:
+                       continue
+               
+                   # Add user message
+                   result = self.conversation_manager.add_message(conv_id, user_input, 'user')
+               
+                   if result['status'] == 'blocked':
+                       print(f"🚫 N.A.V.I.: {result['message']}")
+                       continue
+               
+                   # Generate response
+                   response = self.conversation_manager.generate_response(conv_id)
+               
+                   if response['status'] == 'success':
+                       print(f"🤖 N.A.V.I.: {response['response']}")
+                   
+                       # Show additional info for demo
+                       if response.get('method') == 'rag':
+                           print(f"   📚 Method: RAG with {response.get('context_used', 0)} sources")
+                       elif response.get('method') == 'direct':
+                           print(f"   🧠 Method: Direct generation")
+                   
+                       safety_score = response.get('safety_score', 1.0)
+                       if safety_score < 1.0:
+                           print(f"   🔒 Safety score: {safety_score:.3f}")
+                   else:
+                       print(f"🤖 N.A.V.I.: I apologize, but I encountered an error: {response.get('message', 'Unknown error')}")
+               
+               except KeyboardInterrupt:
+                   print("\n🤖 N.A.V.I.: Demo interrupted. Goodbye!")
                    break
-               
-               if user_input.lower() == 'stats':
-                   stats = self.safety_system.get_moderation_stats()
-                   print(f"🔒 Safety Statistics:")
-                   print(f"   Total requests: {stats['total_requests']}")
-                   print(f"   Safe requests: {stats['safe_requests']}")
-                   print(f"   Block rate: {stats.get('block_rate', 0):.2%}")
-                   continue
-               
-               if not user_input:
-                   continue
-               
-               # Add user message
-               result = self.conversation_manager.add_message(conv_id, user_input, 'user')
-               
-               if result['status'] == 'blocked':
-                   print(f"🚫 N.A.V.I.: {result['message']}")
-                   continue
-               
-               # Generate response
-               response = self.conversation_manager.generate_response(conv_id)
-               
-               if response['status'] == 'success':
-                   print(f"🤖 N.A.V.I.: {response['response']}")
-                   
-                   # Show additional info for demo
-                   if response.get('method') == 'rag':
-                       print(f"   📚 Method: RAG with {response.get('context_used', 0)} sources")
-                   elif response.get('method') == 'direct':
-                       print(f"   🧠 Method: Direct generation")
-                   
-                   safety_score = response.get('safety_score', 1.0)
-                   if safety_score < 1.0:
-                       print(f"   🔒 Safety score: {safety_score:.3f}")
-               else:
-                   print(f"🤖 N.A.V.I.: I apologize, but I encountered an error: {response.get('message', 'Unknown error')}")
-               
-           except KeyboardInterrupt:
-               print("\n🤖 N.A.V.I.: Demo interrupted. Goodbye!")
-               break
+               except Exception as e:
+                   print(f"❌ Error: {e}")
+
+      def run_tests(self):
+           """Run system tests"""
+           print("🧪 Running N.A.V.I. System Tests...")
+           print("=" * 50)
+       
+           if not self.conversation_manager:
+               self.initialize_components()
+       
+           tests_passed = 0
+           tests_total = 0
+       
+           # Test 1: Basic tokenizer
+           tests_total += 1
+           try:
+               test_text = "Hello, how are you today?"
+               tokens = self.tokenizer.encode(test_text)
+               decoded = self.tokenizer.decode(tokens)
+               assert len(tokens) > 0, "Tokenization failed"
+               print("✅ Test 1: Tokenizer - PASSED")
+               tests_passed += 1
            except Exception as e:
-               print(f"❌ Error: {e}")
-
-   def run_tests(self):
-       """Run system tests"""
-       print("🧪 Running N.A.V.I. System Tests...")
-       print("=" * 50)
+               print(f"❌ Test 1: Tokenizer - FAILED: {e}")
        
-       if not self.conversation_manager:
-           self.initialize_components()
+           # Test 2: Model forward pass
+           tests_total += 1
+           try:
+               input_ids = torch.tensor([[1, 2, 3, 4, 5]])
+               outputs = self.model(input_ids, return_dict=True)
+               assert 'logits' in outputs, "Model output missing logits"
+               assert 'safety_scores' in outputs, "Model output missing safety scores"
+               print("✅ Test 2: Model forward pass - PASSED")
+               tests_passed += 1
+           except Exception as e:
+               print(f"❌ Test 2: Model forward pass - FAILED: {e}")
        
-       tests_passed = 0
-       tests_total = 0
+           # Test 3: Safety system
+           tests_total += 1
+           try:
+               safe_text = "Hello, how are you today?"
+               safety_results = self.safety_system.check_multimodal_safety(text=safe_text)
+               assert isinstance(safety_results, dict), "Safety check should return dict"
+               assert 'overall_safe' in safety_results, "Missing overall safety result"
+               print("✅ Test 3: Safety system - PASSED")
+               tests_passed += 1
+           except Exception as e:
+               print(f"❌ Test 3: Safety system - FAILED: {e}")
        
-       # Test 1: Basic tokenizer
-       tests_total += 1
-       try:
-           test_text = "Hello, how are you today?"
-           tokens = self.tokenizer.encode(test_text)
-           decoded = self.tokenizer.decode(tokens)
-           assert len(tokens) > 0, "Tokenization failed"
-           print("✅ Test 1: Tokenizer - PASSED")
-           tests_passed += 1
-       except Exception as e:
-           print(f"❌ Test 1: Tokenizer - FAILED: {e}")
-       
-       # Test 2: Model forward pass
-       tests_total += 1
-       try:
-           input_ids = torch.tensor([[1, 2, 3, 4, 5]])
-           outputs = self.model(input_ids, return_dict=True)
-           assert 'logits' in outputs, "Model output missing logits"
-           assert 'safety_scores' in outputs, "Model output missing safety scores"
-           print("✅ Test 2: Model forward pass - PASSED")
-           tests_passed += 1
-       except Exception as e:
-           print(f"❌ Test 2: Model forward pass - FAILED: {e}")
-       
-       # Test 3: Safety system
-       tests_total += 1
-       try:
-           safe_text = "Hello, how are you today?"
-           safety_results = self.safety_system.check_multimodal_safety(text=safe_text)
-           assert isinstance(safety_results, dict), "Safety check should return dict"
-           assert 'overall_safe' in safety_results, "Missing overall safety result"
-           print("✅ Test 3: Safety system - PASSED")
-           tests_passed += 1
-       except Exception as e:
-           print(f"❌ Test 3: Safety system - FAILED: {e}")
-       
-       # Test 4: RAG system
-       tests_total += 1
-       try:
-           doc_id = self.rag_system.add_document("Test document content", {"test": True})
-           assert doc_id > 0, "Document addition failed"
+           # Test 4: RAG system
+           tests_total += 1
+           try:
+               doc_id = self.rag_system.add_document("Test document content", {"test": True})
+               assert doc_id > 0, "Document addition failed"
            
-           results = self.rag_system.retrieve_documents("test", top_k=1)
-           assert len(results) >= 0, "Document retrieval failed"
-           print("✅ Test 4: RAG system - PASSED")
-           tests_passed += 1
-       except Exception as e:
-           print(f"❌ Test 4: RAG system - FAILED: {e}")
+               results = self.rag_system.retrieve_documents("test", top_k=1)
+               assert len(results) >= 0, "Document retrieval failed"
+               print("✅ Test 4: RAG system - PASSED")
+               tests_passed += 1
+           except Exception as e:
+               print(f"❌ Test 4: RAG system - FAILED: {e}")
        
-       # Test 5: Conversation management
-       tests_total += 1
-       try:
-           conv_id = "test_conversation"
-           result = self.conversation_manager.start_conversation(conv_id)
-           assert result['status'] == 'started', "Conversation creation failed"
+           # Test 5: Conversation management
+           tests_total += 1
+           try:
+               conv_id = "test_conversation"
+               result = self.conversation_manager.start_conversation(conv_id)
+               assert result['status'] == 'started', "Conversation creation failed"
            
-           msg_result = self.conversation_manager.add_message(conv_id, "Hello test")
-           assert msg_result['status'] == 'success', "Message addition failed"
-           print("✅ Test 5: Conversation management - PASSED")
-           tests_passed += 1
-       except Exception as e:
-           print(f"❌ Test 5: Conversation management - FAILED: {e}")
+               msg_result = self.conversation_manager.add_message(conv_id, "Hello test")
+               assert msg_result['status'] == 'success', "Message addition failed"
+               print("✅ Test 5: Conversation management - PASSED")
+               tests_passed += 1
+           except Exception as e:
+               print(f"❌ Test 5: Conversation management - FAILED: {e}")
        
-       print(f"\n📊 Test Results: {tests_passed}/{tests_total} tests passed")
-       print(f"Success Rate: {(tests_passed/tests_total)*100:.1f}%")
+           print(f"\n📊 Test Results: {tests_passed}/{tests_total} tests passed")
+           print(f"Success Rate: {(tests_passed/tests_total)*100:.1f}%")
        
-       if tests_passed == tests_total:
-           print("🎉 All tests passed! N.A.V.I. system is ready.")
-       else:
-           print("⚠️  Some tests failed. Please check the system configuration.")
+           if tests_passed == tests_total:
+               print("🎉 All tests passed! N.A.V.I. system is ready.")
+           else:
+               print("⚠️  Some tests failed. Please check the system configuration.")
        
-       return tests_passed == tests_total
+           return tests_passed == tests_total
 
-   def shutdown(self):
-       """Shutdown the application gracefully"""
-       logger.info("Shutting down N.A.V.I. application...")
+      def shutdown(self):
+           """Shutdown the application gracefully"""
+           logger.info("Shutting down N.A.V.I. application...")
        
-       if self.conversation_manager:
-           self.conversation_manager.close()
+           if self.conversation_manager:
+               self.conversation_manager.close()
        
-       if self.rag_system:
-           self.rag_system.close()
+           if self.rag_system:
+               self.rag_system.close()
        
-       logger.info("N.A.V.I. application shutdown complete")
-       print("👋 N.A.V.I. system shutdown complete.")
+           logger.info("N.A.V.I. application shutdown complete")
+           print("👋 N.A.V.I. system shutdown complete.")
 
 #=======================================================================
 # UTILITY FUNCTIONS
