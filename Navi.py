@@ -1714,7 +1714,7 @@ class NAVIModel(nn.Module):
         # Enable gradient checkpointing for memory efficiency
         if self.use_checkpointing:
             for layer in self.layers:
-                layer = torch.utils.checkpoint.checkpoint_wrapper(layer)
+                layer = torch.utils.checkpoint.checkpoint(layer)
 
         # Language modeling head
         self.lm_head = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
