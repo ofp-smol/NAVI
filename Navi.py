@@ -1,5 +1,5 @@
 Importing NAVI system from Navi.py...
-❌ Error importing NAVI system: unexpected indent (Navi.py, line 1616)
+Error importing NAVI system: unexpected indent (Navi.py, line 1616)
 Please check that your Navi.py file contains the complete NAVI code
 Traceback (most recent call last):
   File "/tmp/ipython-input-2792921384.py", line 17, in <cell line: 0>
