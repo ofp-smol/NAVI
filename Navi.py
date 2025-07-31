@@ -791,27 +791,27 @@ class NAVIModel(nn.Module):
            
         return outputs
        
-   def generate(self, input_ids: torch.Tensor, max_length: int = 100,
+    def generate(self, input_ids: torch.Tensor, max_length: int = 100,
                temperature: float = 0.8, top_p: float = 0.9, top_k: int = 50,
                repetition_penalty: float = 1.1, pad_token_id: int = 0,
                eos_token_id: int = 3, safety_check: bool = True,
                min_safety_score: float = None) -> Dict[str, torch.Tensor]:
-       """
-       Enhanced generation with safety checking
-       """
-       self.eval()
-       device = input_ids.device
-       batch_size = input_ids.size(0)
+        """
+        Enhanced generation with safety checking
+        """
+        self.eval()
+        device = input_ids.device
+        batch_size = input_ids.size(0)
        
-       if min_safety_score is None:
+        if min_safety_score is None:
            min_safety_score = self.config.safety_threshold
            
-       # Initialize generation tracking
-       generated_tokens = input_ids.clone()
-       finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
-       safety_violations = torch.zeros(batch_size, dtype=torch.int, device=device)
+        # Initialize generation tracking
+        generated_tokens = input_ids.clone()
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        safety_violations = torch.zeros(batch_size, dtype=torch.int, device=device)
        
-       with torch.no_grad():
+        with torch.no_grad():
            for step in range(max_length):
                # Forward pass
                outputs = self.forward(generated_tokens, return_dict=True)
@@ -872,11 +872,11 @@ class NAVIModel(nn.Module):
                if finished.all():
                    break
                    
-       return {
+        return {
            'sequences': generated_tokens,
            'safety_violations': safety_violations,
            'finished': finished
-       }
+        }
 
 #===============================================================================
 # ENHANCED RAG SYSTEM
