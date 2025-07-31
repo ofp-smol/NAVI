@@ -1605,7 +1605,7 @@ class NAVITransformerLayer(nn.Module):
         self.ln1 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
         self.ln2 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
 
-        # FIXED INDENTATION: Reasoning gate mechanism for enhanced logical processing
+        # Reasoning gate mechanism for enhanced logical processing
         self.reasoning_gate = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 4),
             nn.Sigmoid(),
@@ -1613,7 +1613,7 @@ class NAVITransformerLayer(nn.Module):
             nn.Tanh()
         )
 
-        # FIXED INDENTATION: Safety gate for content filtering
+        # Safety gate for content filtering
         self.safety_gate = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 8),
             nn.ReLU(),
@@ -1621,7 +1621,7 @@ class NAVITransformerLayer(nn.Module):
             nn.Sigmoid()
         )
 
-        # FIXED INDENTATION: Skip connection weights
+        # Skip connection weights
         self.attn_skip_weight = nn.Parameter(torch.ones(1))
         self.ff_skip_weight = nn.Parameter(torch.ones(1))
 
