@@ -3575,7 +3575,24 @@ class NAVIMultimodalTrainer:
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
+        self.adaptive_batch_size = True
+        self.current_batch_size = config.batch_size
+        self.min_batch_size = 1
+
+    def adjust_batch_size_for_memory(self):
+        """Dynamically adjust batch size based on available memory"""
+        if torch.cuda.is_available():
+            memory_allocated = torch.cuda.memory_allocated()
+            memory_cached = torch.cuda.memory_cached()
+            total_memory = torch.cuda.get_device_properties(0).total_memory
         
+            memory_usage_ratio = (memory_allocated + memory_cached) / total_memory
+        
+            if memory_usage_ratio > 0.85 and self.current_batch_size > self.min_batch_size:
+                self.current_batch_size = max(self.min_batch_size, self.current_batch_size // 2)
+                logger.info(f"Reduced batch size to {self.current_batch_size} due to memory pressure")
+                torch.cuda.empty_cache()
+
         # Training components
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
