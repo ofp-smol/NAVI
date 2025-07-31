@@ -4455,6 +4455,46 @@ def setup_multimodal_knowledge_base(rag_system: NAVIRAGSystem):
 #=======================================================================
 # ENHANCED MAIN ENTRY POINT
 #=======================================================================
+def create_colab_config() -> NAVIConfig:
+    """Create optimized configuration for Google Colab"""
+    config = NAVIConfig()
+    
+    # Optimize for Colab's 12-15GB RAM
+    config.vocab_size = 32768      # Smaller vocab
+    config.embed_dim = 512         # Smaller embedding
+    config.num_layers = 8          # Fewer layers  
+    config.num_heads = 8           # Fewer heads
+    config.ff_dim = 2048           # Smaller FF
+    config.max_seq_len = 1024      # Shorter sequences
+    
+    # Memory-optimized training settings
+    config.batch_size = 2          # Small batch
+    config.gradient_accumulation_steps = 8  # Higher accumulation
+    
+    # Disable multimodal for memory saving (can be re-enabled)
+    config.enable_vision = False
+    config.enable_audio = False
+    
+    return config
+
+def setup_colab_training(app):
+    """Setup NAVI for optimal Colab training"""
+    print("🚀 Setting up NAVI for Google Colab...")
+    
+    # Enable optimizations
+    app.trainer.enable_colab_optimizations()
+    
+    # Clear initial memory
+    app.model.clear_cache()
+    
+    # Print memory info
+    if torch.cuda.is_available():
+        print(f"📊 GPU: {torch.cuda.get_device_name()}")
+        total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        print(f"📊 Total GPU Memory: {total_memory:.1f}GB")
+        
+    print(f"📊 Model Parameters: {app.model.count_parameters():,}")
+    print("✅ Colab setup complete!")
 
 def main():
     """Enhanced main entry point for N.A.V.I. Multimodal system"""
