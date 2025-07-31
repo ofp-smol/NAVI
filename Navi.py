@@ -1615,7 +1615,7 @@ class NAVIApplication:
    
    def __init__(self, config_path: str = None):
        # Load or create configuration
-if config_path and os.path.exists(config_path):
+       if config_path and os.path.exists(config_path):
            self.config = NAVIConfig.load(config_path)
            logger.info(f"Configuration loaded from {config_path}")
        else:
