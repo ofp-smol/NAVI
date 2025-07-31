@@ -750,7 +750,7 @@ class NAVITokenizer:
         logger.info(f"Tokenizer saved to {filepath}")
     
     @classmethod
-    def load(cls, filepath: str) -> 'AdvancedBPETokenizer':
+    def load(cls, filepath: str) -> 'NAVITokenizer':
         """Load tokenizer from file"""
         with open(filepath, 'rb') as f:
             tokenizer_data = pickle.load(f)
@@ -1075,7 +1075,7 @@ def demonstrate_advanced_tokenizer():
        preserve_whitespace=True
    )
    
-   tokenizer = AdvancedBPETokenizer(config)
+   tokenizer = NAVITokenizer(config)
    
    # Train on sample corpus
    print("📚 Training tokenizer on sample corpus...")
@@ -1147,7 +1147,7 @@ def demonstrate_advanced_tokenizer():
    print(f"\n💾 Tokenizer saved to: {save_path}")
    
    # Load and verify
-   loaded_tokenizer = AdvancedBPETokenizer.load(save_path)
+   loaded_tokenizer = NAVITokenizer.load(save_path)
    test_encoding = loaded_tokenizer.encode("Test loading functionality")
    print(f"✅ Tokenizer loaded successfully, test encoding: {len(test_encoding)} tokens")
    
