@@ -1849,6 +1849,7 @@ class NAVIModel(nn.Module):
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
             return None
+
     def forward_efficient(self, input_ids, attention_mask=None, **kwargs):
         """Memory-efficient forward pass for training"""
         # Process in smaller chunks if sequence is too long
@@ -1879,106 +1880,147 @@ class NAVIModel(nn.Module):
             return self.forward(input_ids, attention_mask, **kwargs)
             
     def forward(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
-                position_ids: Optional[torch.Tensor] = None, vision_data: str = None,
-                audio_data: np.ndarray = None, output_attentions: bool = False,
-                output_hidden_states: bool = False, return_dict: bool = True) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
-        """
-        Enhanced forward pass with multimodal support
-        """
+            position_ids: Optional[torch.Tensor] = None, vision_data: str = None,
+            audio_data: np.ndarray = None, output_attentions: bool = False,
+            output_hidden_states: bool = False, return_dict: bool = True) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
+        """Enhanced forward pass with memory optimization"""
+    
+        # Move tensors to device and ensure memory efficiency
+        input_ids = input_ids.to(self.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
+    
         batch_size, seq_len = input_ids.shape
-        device = input_ids.device
-        
+    
+        # Clear cache if memory usage is high
+        if torch.cuda.is_available() and torch.cuda.memory_allocated() > torch.cuda.get_device_properties(0).total_memory * 0.8:
+            torch.cuda.empty_cache()
+    
         # Create attention mask if not provided
         if attention_mask is None:
             attention_mask = self.create_attention_mask(input_ids)
-            
-        # Expand attention mask for multi-head attention
-        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-        extended_attention_mask = extended_attention_mask.expand(batch_size, 1, seq_len, seq_len)
         
-        # Get text embeddings
-        hidden_states = self.embedding(input_ids, position_ids)
+        # Expand attention mask for multi-head attention with memory efficiency
+        with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+            extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+            extended_attention_mask = extended_attention_mask.expand(batch_size, 1, seq_len, seq_len)
         
-        # Process multimodal inputs
-        vision_emb = None
-        audio_emb = None
+            # Get text embeddings
+            hidden_states = self.embedding(input_ids, position_ids)
         
-        if vision_data is not None and self.config.enable_vision:
-            vision_emb = self.process_image(vision_data)
-            
-        if audio_data is not None and self.config.enable_audio:
-            audio_emb = self.process_audio(audio_data)
-            
-        # Apply multimodal fusion if needed
-        if (vision_emb is not None or audio_emb is not None) and hasattr(self, 'multimodal_fusion'):
-            hidden_states = self.multimodal_fusion(hidden_states, vision_emb, audio_emb)
-            
-        # Store hidden states if requested
-        all_hidden_states = [hidden_states] if output_hidden_states else None
-        all_attentions = [] if output_attentions else None
-        all_safety_scores = []
+            # Process multimodal inputs with memory management
+            vision_emb = None
+            audio_emb = None
         
-        # Forward through transformer layers
-        for i, layer in enumerate(self.layers):
-            if output_attentions:
-                layer_outputs = layer(
-                    hidden_states,
-                    attention_mask=extended_attention_mask,
-                    output_attentions=True
-                )
-                hidden_states, attn_weights, safety_scores = layer_outputs
-                all_attentions.append(attn_weights)
-                all_safety_scores.append(safety_scores)
+            if vision_data is not None and self.config.enable_vision:
+                vision_emb = self.process_image(vision_data)
+            
+            if audio_data is not None and self.config.enable_audio:
+                audio_emb = self.process_audio(audio_data)
+            
+            # Apply multimodal fusion if needed
+            if (vision_emb is not None or audio_emb is not None) and hasattr(self, 'multimodal_fusion'):
+                hidden_states = self.multimodal_fusion(hidden_states, vision_emb, audio_emb)
+                # Clear intermediate multimodal embeddings to save memory
+                del vision_emb, audio_emb
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        
+            # Store hidden states if requested (with memory consideration)
+            all_hidden_states = [hidden_states.detach().clone()] if output_hidden_states else None
+            all_attentions = [] if output_attentions else None
+            all_safety_scores = []
+        
+            # Forward through transformer layers with checkpointing
+            for i, layer in enumerate(self.layers):
+                if self.use_checkpointing and self.training:
+                    # Use gradient checkpointing to save memory during training
+                    def create_custom_forward(module):
+                        def custom_forward(*inputs):
+                            return module(*inputs)
+                        return custom_forward
+                
+                    if output_attentions:
+                        layer_outputs = torch.utils.checkpoint.checkpoint(
+                            create_custom_forward(layer),
+                            hidden_states,
+                            extended_attention_mask,
+                            True  # output_attentions
+                        )
+                        hidden_states, attn_weights, safety_scores = layer_outputs
+                        all_attentions.append(attn_weights.detach())
+                        all_safety_scores.append(safety_scores.detach())
+                    else:
+                        hidden_states = torch.utils.checkpoint.checkpoint(
+                            create_custom_forward(layer),
+                            hidden_states,
+                            extended_attention_mask
+                        )
+                else:
+                    # Regular forward pass
+                    if output_attentions:
+                        layer_outputs = layer(
+                            hidden_states,
+                            attention_mask=extended_attention_mask,
+                            output_attentions=True
+                        )
+                        hidden_states, attn_weights, safety_scores = layer_outputs
+                        all_attentions.append(attn_weights)
+                        all_safety_scores.append(safety_scores)
+                    else:
+                        hidden_states = layer(hidden_states, attention_mask=extended_attention_mask)
+                    
+                # Store hidden states with memory management
+                if output_hidden_states:
+                    all_hidden_states.append(hidden_states.detach().clone())
+                
+                # Periodic memory cleanup
+                if i % 4 == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+            # Final layer normalization
+            hidden_states = self.ln_final(hidden_states)
+        
+            # Language modeling logits
+            lm_logits = self.lm_head(hidden_states)
+        
+            # Safety classification with memory efficiency
+            if attention_mask is not None:
+                sequence_lengths = attention_mask.sum(dim=1) - 1
+                safety_input = hidden_states[torch.arange(batch_size), sequence_lengths]
             else:
-                hidden_states = layer(hidden_states, attention_mask=extended_attention_mask)
-                
-            # Store hidden states
+                safety_input = hidden_states[:, -1, :]
+            
+            safety_logits = self.safety_classifier(safety_input)
+            safety_scores = safety_logits[:, 0]
+        
+            # Reasoning representation
+            reasoning_repr = self.reasoning_head(safety_input)
+        
+            # Value prediction
+            values = self.value_head(safety_input).squeeze(-1)
+        
+            if not return_dict:
+                return lm_logits
+            
+            # Return comprehensive output dictionary
+            outputs = {
+                'logits': lm_logits,
+                'safety_scores': safety_scores,
+                'safety_logits': safety_logits,
+                'reasoning_representation': reasoning_repr,
+                'values': values,
+                'last_hidden_state': hidden_states,
+                'multimodal': vision_data is not None or audio_data is not None
+            }
+        
             if output_hidden_states:
-                all_hidden_states.append(hidden_states)
-                
-        # Final layer normalization
-        hidden_states = self.ln_final(hidden_states)
-        
-        # Language modeling logits
-        lm_logits = self.lm_head(hidden_states)
-        
-        # Safety classification
-        if attention_mask is not None:
-            sequence_lengths = attention_mask.sum(dim=1) - 1
-            safety_input = hidden_states[torch.arange(batch_size), sequence_lengths]
-        else:
-            safety_input = hidden_states[:, -1, :]
+                outputs['hidden_states'] = all_hidden_states
+            if output_attentions:
+                outputs['attentions'] = all_attentions
+                outputs['safety_scores_per_layer'] = all_safety_scores
             
-        safety_logits = self.safety_classifier(safety_input)
-        safety_scores = safety_logits[:, 0]
-        
-        # Reasoning representation
-        reasoning_repr = self.reasoning_head(safety_input)
-        
-        # Value prediction
-        values = self.value_head(safety_input).squeeze(-1)
-        
-        if not return_dict:
-            return lm_logits
-            
-        # Return comprehensive output dictionary
-        outputs = {
-            'logits': lm_logits,
-            'safety_scores': safety_scores,
-            'safety_logits': safety_logits,
-            'reasoning_representation': reasoning_repr,
-            'values': values,
-            'last_hidden_state': hidden_states,
-            'multimodal': vision_emb is not None or audio_emb is not None
-        }
-        
-        if output_hidden_states:
-            outputs['hidden_states'] = all_hidden_states
-        if output_attentions:
-            outputs['attentions'] = all_attentions
-            outputs['safety_scores_per_layer'] = all_safety_scores
-            
-        return outputs
+            return outputs
         
     def generate(self, input_ids: torch.Tensor, max_length: int = 100,
                 temperature: float = 0.8, top_p: float = 0.9, top_k: int = 50,
