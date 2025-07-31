@@ -783,13 +783,13 @@ class NAVIModel(nn.Module):
            'last_hidden_state': hidden_states
         }
        
-       if output_hidden_states:
+        if output_hidden_states:
            outputs['hidden_states'] = all_hidden_states
-       if output_attentions:
+        if output_attentions:
            outputs['attentions'] = all_attentions
            outputs['safety_scores_per_layer'] = all_safety_scores
            
-       return outputs
+        return outputs
        
    def generate(self, input_ids: torch.Tensor, max_length: int = 100,
                temperature: float = 0.8, top_p: float = 0.9, top_k: int = 50,
