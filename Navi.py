@@ -1613,47 +1613,357 @@ class NAVIConversationManager:
 class NAVIApplication:
    """N.A.V.I. application orchestrator"""
    
-      def __init__(self, config_path: str = None):
-          # Load or create configuration
-          if config_path and os.path.exists(config_path):
-              self.config = NAVIConfig.load(config_path)
-              logger.info(f"Configuration loaded from {config_path}")
-          else:
-              self.config = NAVIConfig()
-              if config_path:
-                  self.config.save(config_path)
-                  logger.info(f"Default configuration saved to {config_path}")
+    def __init__(self, config_path: str = None):
+       # Load or create configuration
+       if config_path and os.path.exists(config_path):
+           self.config = NAVIConfig.load(config_path)
+           logger.info(f"Configuration loaded from {config_path}")
+       else:
+           self.config = NAVIConfig()
+           if config_path:
+               self.config.save(config_path)
+               logger.info(f"Default configuration saved to {config_path}")
        
-          # Initialize components
-          self.tokenizer = None
-          self.model = None
-          self.rag_system = None
-          self.safety_system = None
-          self.conversation_manager = None
+       # Initialize components
+       self.tokenizer = None
+       self.model = None
+       self.rag_system = None
+       self.safety_system = None
+       self.conversation_manager = None
        
-          logger.info("N.A.V.I. application initialized")
+       logger.info("N.A.V.I. application initialized")
 
-      def initialize_components(self):
-          """Initialize all system components"""
-          logger.info("Initializing N.A.V.I. components...")
+    def initialize_components(self):
+       """Initialize all system components"""
+       logger.info("Initializing N.A.V.I. components...")
        
-          try:
-              # Clear memory
-              gc.collect()
+       try:
+           # Clear memory
+           gc.collect()
            
-              # Initialize tokenizer
-              self.tokenizer = NAVITokenizer(self.config.vocab_size)
+           # Initialize tokenizer
+           self.tokenizer = NAVITokenizer(self.config.vocab_size)
            
-              # Initialize model
-              self.model = NAVIModel(self.config)
+           # Initialize model
+           self.model = NAVIModel(self.config)
            
-              # Initialize RAG system
-              self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
+           # Initialize RAG system
+           self.rag_system = NAVIRAGSystem(self.model, self.tokenizer, self.config)
            
-              # Initialize safety system
-              self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
+           # Initialize safety system
+           self.safety_system = NAVIMultimodalSafety(self.model, self.tokenizer, self.config)
            
-              # Initialize conversation manager
+           # Initialize conversation manager
+           self.conversation_manager = NAVIConversationManager(
+               self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
+           )
+           
+           logger.info("All components initialized successfully")
+           logger.info(f"Model parameters: {self.model.count_parameters():,}")
+           
+       except Exception as e:
+           logger.error(f"Error initializing components: {e}")
+           raise
+
+    def run_demo(self):
+       """Run interactive demo"""
+       print("=" * 70)
+       print("N.A.V.I. DEMONSTRATION")
+       print("Advanced AI with Safety and Reasoning")
+       print("=" * 70)
+       
+       if not self.conversation_manager:
+           raise RuntimeError("Conversation manager not initialized. Call initialize_components() first.")
+       
+       # Start demo conversation
+       conv_id = f"demo_{int(time.time())}"
+       self.conversation_manager.start_conversation(conv_id)
+       
+       print("\n🤖 N.A.V.I.: Hello! I'm N.A.V.I. with advanced safety and reasoning capabilities.")
+       print("\nDemo Commands:")
+       print("- Type your message normally for conversation")
+       print("- Type 'stats' to see safety statistics")
+       print("- Type 'quit' to exit")
+       
+       while True:
+           try:
+               user_input = input("\n👤 You: ").strip()
+               
+               if user_input.lower() in ['quit', 'exit', 'bye']:
+                   print("🤖 N.A.V.I.: Goodbye! Thank you for trying the demo.")
+                   break
+               
+               if user_input.lower() == 'stats':
+                   stats = self.safety_system.get_moderation_stats()
+                   print(f"🔒 Safety Statistics:")
+                   print(f"   Total requests: {stats['total_requests']}")
+                   print(f"   Safe requests: {stats['safe_requests']}")
+                   print(f"   Block rate: {stats.get('block_rate', 0):.2%}")
+                   continue
+               
+               if not user_input:
+                   continue
+               
+               # Add user message
+               result = self.conversation_manager.add_message(conv_id, user_input, 'user')
+               
+               if result['status'] == 'blocked':
+                   print(f"🚫 N.A.V.I.: {result['message']}")
+                   continue
+               
+               # Generate response
+               response = self.conversation_manager.generate_response(conv_id)
+               
+               if response['status'] == 'success':
+                   print(f"🤖 N.A.V.I.: {response['response']}")
+                   
+                   # Show additional info for demo
+                   if response.get('method') == 'rag':
+                       print(f"   📚 Method: RAG with {response.get('context_used', 0)} sources")
+                   elif response.get('method') == 'direct':
+                       print(f"   🧠 Method: Direct generation")
+                   
+                   safety_score = response.get('safety_score', 1.0)
+                   if safety_score < 1.0:
+                       print(f"   🔒 Safety score: {safety_score:.3f}")
+               else:
+                   print(f"🤖 N.A.V.I.: I apologize, but I encountered an error: {response.get('message', 'Unknown error')}")
+               
+           except KeyboardInterrupt:
+               print("\n🤖 N.A.V.I.: Demo interrupted. Goodbye!")
+               break
+           except Exception as e:
+               print(f"❌ Error: {e}")
+
+    def run_tests(self):
+       """Run system tests"""
+       print("🧪 Running N.A.V.I. System Tests...")
+       print("=" * 50)
+       
+       if not self.conversation_manager:
+           self.initialize_components()
+       
+       tests_passed = 0
+       tests_total = 0
+       
+       # Test 1: Basic tokenizer
+       tests_total += 1
+       try:
+           test_text = "Hello, how are you today?"
+           tokens = self.tokenizer.encode(test_text)
+           decoded = self.tokenizer.decode(tokens)
+           assert len(tokens) > 0, "Tokenization failed"
+           print("✅ Test 1: Tokenizer - PASSED")
+           tests_passed += 1
+       except Exception as e:
+           print(f"❌ Test 1: Tokenizer - FAILED: {e}")
+       
+       # Test 2: Model forward pass
+       tests_total += 1
+       try:
+           input_ids = torch.tensor([[1, 2, 3, 4, 5]])
+           outputs = self.model(input_ids, return_dict=True)
+           assert 'logits' in outputs, "Model output missing logits"
+           assert 'safety_scores' in outputs, "Model output missing safety scores"
+           print("✅ Test 2: Model forward pass - PASSED")
+           tests_passed += 1
+       except Exception as e:
+           print(f"❌ Test 2: Model forward pass - FAILED: {e}")
+       
+       # Test 3: Safety system
+       tests_total += 1
+       try:
+           safe_text = "Hello, how are you today?"
+           safety_results = self.safety_system.check_multimodal_safety(text=safe_text)
+           assert isinstance(safety_results, dict), "Safety check should return dict"
+           assert 'overall_safe' in safety_results, "Missing overall safety result"
+           print("✅ Test 3: Safety system - PASSED")
+           tests_passed += 1
+       except Exception as e:
+           print(f"❌ Test 3: Safety system - FAILED: {e}")
+       
+       # Test 4: RAG system
+       tests_total += 1
+       try:
+           doc_id = self.rag_system.add_document("Test document content", {"test": True})
+           assert doc_id > 0, "Document addition failed"
+           
+           results = self.rag_system.retrieve_documents("test", top_k=1)
+           assert len(results) >= 0, "Document retrieval failed"
+           print("✅ Test 4: RAG system - PASSED")
+           tests_passed += 1
+       except Exception as e:
+           print(f"❌ Test 4: RAG system - FAILED: {e}")
+       
+       # Test 5: Conversation management
+       tests_total += 1
+       try:
+           conv_id = "test_conversation"
+           result = self.conversation_manager.start_conversation(conv_id)
+           assert result['status'] == 'started', "Conversation creation failed"
+           
+           msg_result = self.conversation_manager.add_message(conv_id, "Hello test")
+           assert msg_result['status'] == 'success', "Message addition failed"
+           print("✅ Test 5: Conversation management - PASSED")
+           tests_passed += 1
+       except Exception as e:
+           print(f"❌ Test 5: Conversation management - FAILED: {e}")
+       
+       print(f"\n📊 Test Results: {tests_passed}/{tests_total} tests passed")
+       print(f"Success Rate: {(tests_passed/tests_total)*100:.1f}%")
+       
+       if tests_passed == tests_total:
+           print("🎉 All tests passed! N.A.V.I. system is ready.")
+       else:
+           print("⚠️  Some tests failed. Please check the system configuration.")
+       
+       return tests_passed == tests_total
+
+    def shutdown(self):
+       """Shutdown the application gracefully"""
+       logger.info("Shutting down N.A.V.I. application...")
+       
+       if self.conversation_manager:
+           self.conversation_manager.close()
+       
+       if self.rag_system:
+           self.rag_system.close()
+       
+       logger.info("N.A.V.I. application shutdown complete")
+       print("👋 N.A.V.I. system shutdown complete.")
+
+#=======================================================================
+# UTILITY FUNCTIONS
+#=======================================================================
+
+def create_demo_data():
+   """Create demo training/knowledge data"""
+   demo_data = [
+       {
+           "text": "<user>What is artificial intelligence?</user><assistant>Artificial Intelligence (AI) is a field of computer science focused on creating systems that can perform tasks typically requiring human intelligence, such as learning, reasoning, perception, and decision-making.</assistant>",
+           "safety_label": 1
+       },
+       {
+           "text": "<user>How can I improve my productivity?</user><assistant>Here are some effective ways to improve productivity: 1) Set clear goals and priorities, 2) Use time-blocking techniques, 3) Minimize distractions, 4) Take regular breaks, 5) Maintain a healthy work-life balance, and 6) Use productivity tools that work for you.</assistant>",
+           "safety_label": 1
+       },
+       {
+           "text": "<user>Tell me about renewable energy</user><assistant>Renewable energy comes from natural sources that replenish themselves, such as solar, wind, hydroelectric, and geothermal power. These clean energy sources are crucial for addressing climate change and reducing our dependence on fossil fuels.</assistant>",
+           "safety_label": 1
+       }
+   ]
+   
+   return demo_data
+
+def setup_knowledge_base(rag_system: NAVIRAGSystem):
+   """Setup knowledge base with sample documents"""
+   docs = [
+       {
+           "content": "N.A.V.I. (Neo Artificial Vivacious Intelligence) is an advanced AI system with comprehensive safety filtering, reasoning capabilities, and conversation management.",
+           "metadata": {"category": "about_navi", "importance": "high"}
+       },
+       {
+           "content": "Artificial Intelligence safety involves ensuring AI systems behave in ways that are beneficial and aligned with human values. This includes content filtering, behavior monitoring, and ethical decision-making.",
+           "metadata": {"category": "ai_safety", "importance": "high"}
+       },
+       {
+           "content": "Natural Language Processing (NLP) is a branch of AI that helps computers understand, interpret, and generate human language in a valuable way.",
+           "metadata": {"category": "nlp", "importance": "medium"}
+       },
+       {
+           "content": "Machine learning is a subset of AI that enables systems to automatically learn and improve from experience without being explicitly programmed.",
+           "metadata": {"category": "machine_learning", "importance": "medium"}
+       }
+   ]
+   
+   for doc in docs:
+       rag_system.add_document(doc["content"], doc["metadata"])
+   
+   print(f"✅ Added {len(docs)} documents to knowledge base")
+
+#=======================================================================
+# MAIN ENTRY POINT
+#=======================================================================
+
+def initialize_navi_system():
+   """Initialize NAVI system for Colab environment"""
+   print("🚀 Initializing NAVI System...")
+   
+   try:
+       # Create application
+       app = NAVIApplication()
+       
+       # Initialize all components
+       app.initialize_components()
+       
+       # Setup knowledge base
+       setup_knowledge_base(app.rag_system)
+       
+       print("✅ NAVI System initialized successfully!")
+       
+       return app
+       
+   except Exception as e:
+       print(f"❌ Error initializing NAVI system: {e}")
+       logger.error(f"Initialization error: {e}")
+       import traceback
+       traceback.print_exc()
+       raise
+
+def main():
+   """Main entry point"""
+   import argparse
+   
+   parser = argparse.ArgumentParser(description='N.A.V.I. (Neo Artificial Vivacious Intelligence)')
+   parser.add_argument('--config', type=str, default='navi_config.json',
+                      help='Configuration file path')
+   parser.add_argument('--mode', type=str, 
+                      choices=['demo', 'test'],
+                      default='demo', help='Run mode')
+   
+   args = parser.parse_args()
+   
+   try:
+       print("🚀 Initializing N.A.V.I. System...")
+       print("=" * 60)
+       
+       # Initialize application
+       app = NAVIApplication(args.config)
+       app.initialize_components()
+       
+       # Setup knowledge base
+       setup_knowledge_base(app.rag_system)
+       
+       # Run based on mode
+       if args.mode == 'demo':
+           app.run_demo()
+       elif args.mode == 'test':
+           success = app.run_tests()
+           if not success:
+               print("\n⚠️  Some tests failed. Please check system configuration.")
+               return 1
+       
+   except KeyboardInterrupt:
+       print("\n\n⏹️  Shutting down N.A.V.I. System...")
+   except Exception as e:
+       logger.error(f"Application error: {e}")
+       print(f"❌ Error: {e}")
+       return 1
+   finally:
+       if 'app' in locals():
+           app.shutdown()
+   
+   return 0
+
+if __name__ == "__main__":
+   # For Colab usage - just initialize and return the system
+   try:
+       navi_app = initialize_navi_system()
+       print("\n🎯 NAVI system ready for use!")
+       print("You can now use navi_app to interact with the system.")
+       print("Example: navi_app.run_demo() or navi_app.run_tests()")
+   except Exception as e:
+       print(f"Failed to initialize NAVI: {e}")              # Initialize conversation manager
               self.conversation_manager = NAVIConversationManager(
                    self.model, self.tokenizer, self.rag_system, self.safety_system, self.config
               )
