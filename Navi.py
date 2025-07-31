@@ -773,15 +773,15 @@ class NAVIModel(nn.Module):
         if not return_dict:
            return lm_logits
            
-       # Return comprehensive output dictionary
-       outputs = {
+        # Return comprehensive output dictionary
+        outputs = {
            'logits': lm_logits,
            'safety_scores': safety_scores,
            'safety_logits': safety_logits,
            'reasoning_representation': reasoning_repr,
            'values': values,
            'last_hidden_state': hidden_states
-       }
+        }
        
        if output_hidden_states:
            outputs['hidden_states'] = all_hidden_states
